@@ -24,8 +24,9 @@ namespace cxx {
             void clear();
         private:
             bool is_shallow_copy;
-            std::shared_ptr<std::map<K, std::vector<V>>> stacks;
-            std::shared_ptr<std::vector<V>> main_stack;
+            template<typename K, typename V>
+            struct data_struct;
+            std::shared_ptr<data_struct> data;
     };
 }
 
