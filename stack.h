@@ -28,6 +28,15 @@ namespace cxx {
             struct data_struct;
             std::shared_ptr<data_struct> data;
     };
+
+    template<typename K, typename V>
+    struct cxx::stack<K, V>::data_struct {
+        // konstruktory & destruktory
+        // list<pair<K, v>> l;
+        // map<K, stack<iterator>> auxiliary stacks
+        // copy()
+
+    };
 }
 
 
