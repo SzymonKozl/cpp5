@@ -30,3 +30,8 @@
 *.exe
 *.out
 *.app
+
+# assignment files
+stack_example.cc
+stack_tresc.txt
+stack_kryteria.txt
