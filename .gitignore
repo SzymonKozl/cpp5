@@ -35,6 +35,12 @@
 stack_example.cc
 stack_tresc.txt
 stack_kryteria.txt
+stack
+
+# other files
+*~
+cmake-build-debug
+.idea/
 
 #vscode shit
 .vscode/*
