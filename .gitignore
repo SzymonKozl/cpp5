@@ -35,3 +35,6 @@
 stack_example.cc
 stack_tresc.txt
 stack_kryteria.txt
+
+#vscode shit
+.vscode/*
