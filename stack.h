@@ -27,10 +27,23 @@ namespace cxx {
             // 4 P
             std::pair<K const &, V &> front();
             std::pair<K const &, V const &> front() const;
+            V & front(K const &);
+            V const & front(K const &) const;
             // 5 P
             size_t size() const;
             size_t count(K const &) const;
             void clear();
+            // S
+            class const_iterator {
+                public const_iterator& operator ++();
+                public const_iterator operator ++(int);
+                public const K& operator *() const noexcept;
+                public const K* operator ->() const noexcept;
+                public const bool operator ==() const noexcept;
+                public const bool operator !=() const noexcept;
+            };
+            const_iterator cbegin();
+            const_iterator cend();
         private:
             // setting this member to false indicates that some non-const 
             // references to stack data may exist so making shallow copy
