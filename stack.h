@@ -8,10 +8,10 @@
 #include <list>
 #include <stack>
 
-using std::shared_ptr;
-
 
 namespace cxx {
+
+    using std::shared_ptr;
     template<typename K, typename V> class stack {
         public:
             // 1 P
@@ -35,12 +35,27 @@ namespace cxx {
             void clear();
             // S
             class const_iterator {
-                public const_iterator& operator ++();
-                public const_iterator operator ++(int);
-                public const K& operator *() const noexcept;
-                public const K* operator ->() const noexcept;
-                public const bool operator ==() const noexcept;
-                public const bool operator !=() const noexcept;
+                using iterator_category = std::forward_iterator_tag;
+                using difference_type = size_t;
+                using value_type = K;
+                using pointer = K*;
+                using reference = K&;
+
+                using itnl_itr = std::map<K, uint64_t>::const_iterator;
+                using itnl_itr_ptr = shared_ptr<itnl_itr>;
+
+
+                public:
+                    const_iterator(itnl_itr_ptr);
+                    const_iterator& operator ++();
+                    const_iterator operator ++(int);
+                    const K& operator *() const noexcept;
+                    const K* operator ->() const noexcept;
+                    bool operator ==(const const_iterator & other) const noexcept;
+                    bool operator !=(const const_iterator & other) const noexcept;
+                private:
+                    itnl_itr_ptr iter;
+
             };
             const_iterator cbegin();
             const_iterator cend();
@@ -56,23 +71,27 @@ namespace cxx {
 
     template<typename K, typename V>
     struct stack<K, V>::data_struct {
-        using stck = std::list<std::pair<K, V>>;
 
-        std::map<K, std::stack<const typename stck::iterator>> aux_lists;
+        using stck = std::list<std::pair<uint64_t, V>>;
+
+        std::map<K, uint64_t> keyMapping;
+        std::map<uint64_t, std::stack<const typename stck::iterator>> aux_lists;
         stck main_list;
+
         int usages;
         
         data_struct(): usages(1) {}
 
-        data_struct(stck &main_list, std::map<K, std::stack<const typename stck::iterator>> & aux_lists):
+        data_struct(stck &main_list, std::map<K, std::stack<const typename stck::iterator>> & aux_lists, std::map<K, uint64_t> keyMapping):
             usages(1),
             aux_lists(aux_lists),
-            main_list(main_list)
+            main_list(main_list),
+            keyMapping(keyMapping)
         {}
 
         shared_ptr<data_struct> cpy_if_needed() {
             if (usages > 1) {
-                shared_ptr tmp = std::make_shared<data_struct>(main_list, aux_lists)
+                shared_ptr tmp = std::make_shared<data_struct>(main_list, aux_lists);
                 usages --;
                 return tmp;
             }
@@ -128,8 +147,58 @@ namespace cxx {
         }
         data = tmp;
     }
-}
 
+    template<typename K, typename V>
+    stack<K, V>::const_iterator stack<K, V>::cbegin() {
+        return const_iterator(data.keyMapping.cbegin());
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator stack<K, V>::cend() {
+        return const_iterator(data.keyMapping.cend());
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator::const_iterator(itnl_itr_ptr iter): iter(iter) {}
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator++() {
+        auto cpy = std::make_shared<itnl_itr>(iter.get());
+        cpy.get() ++;
+        iter.swap(cpy);
+        return &this;
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator stack<K, V>::const_iterator::operator++(int) {
+        auto cpy1 = std::make_shared<itnl_itr>(iter.get());
+        auto cpy2 = std::make_shared<itnl_itr>(iter.get());
+        cpy1.get() ++;
+        const_iterator r(cpy2);
+        iter.swap(cpy1);
+        return r;
+    }
+
+    template<typename K, typename V>
+    const K& stack<K, V>::const_iterator::operator*() const noexcept {
+        return *iter.get();
+    }
+
+    template<typename K, typename V>
+    const K* stack<K, V>::const_iterator::operator->() const noexcept {
+        return iter.get().operator->();
+    }
+
+    template<typename K, typename V>
+    bool stack<K, V>::const_iterator::operator==(const const_iterator& other) const noexcept{
+        return (iter.get().operator->())==(other.iter.get().operator->());
+    }
+
+    template<typename K, typename V>
+    bool stack<K, V>::const_iterator::operator!=(const const_iterator& other) const noexcept {
+        return !this->operator==(other);
+    }
+}
 
 
 #endif
