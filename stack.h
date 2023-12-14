@@ -65,35 +65,35 @@ namespace cxx {
             // would be unsafe
             bool can_be_shallow_copied = true;
             // 6 S
-            struct data_struct;
+            struct data_struct {
+                // key id
+                using kid_t             = uint64_t;
+                using counter_t         = size_t;
+                using sitem_t           = std::pair<kid_t, V>;
+                using main_stack_t      = std::list<sitem_t>;
+                using main_stack_cit_t  = const typename main_stack_t::iterator;
+                using aux_stack_item_t  = std::list<main_stack_cit_t>;
+
+                shared_ptr<data_struct> cpy_if_needed();
+
+            private:
+                std::map<K, kid_t> keyMapping;
+                std::map<kid_t, aux_stack_item_t> aux_lists;
+                main_stack_t main_list;
+
+                size_t usages;
+                kid_t next_kid;
+            };
             shared_ptr<data_struct> data;
     };
 
     template<typename K, typename V>
-    void stack<K, V>::push(const K &, const V &) {
-
-    }
-
-    template<typename K, typename V>
     struct stack<K, V>::data_struct {
-        // key id
-        using kid_t             = uint64_t;
-        using counter_t         = size_t;
-        using sitem_t           = std::pair<kid_t, V>;
-        using main_stack_t      = std::list<sitem_t>;
-        using main_stack_cit_t  = const typename main_stack_t::iterator;
-        using aux_stack_item_t  = std::list<main_stack_cit_t>;
-
-        std::map<K, kid_t> keyMapping;
-        std::map<kid_t, aux_stack_item_t> aux_lists;
-        main_stack_t main_list;
-
-        size_t usages;
-        
         data_struct(): usages(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t > & aux_lists, std::map<K, kid_t> keyMapping):
+        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, kid_t> keyMapping):
             usages(1),
+            next_kid(1),
             aux_lists(aux_lists),
             main_list(main_list),
             keyMapping(keyMapping)
@@ -112,6 +112,20 @@ namespace cxx {
             }
         }
     };
+
+    template<typename K, typename V>
+    void stack<K, V>::push(const K &key, const V &value) {
+        shared_ptr<data_struct> stack_data = data->cpy_if_needed();
+        kid_t id = next_kid;
+
+        // todo: jeśli zostało skopiowane to nie przywracać, jesli nie to przywracać do poprzedniego stanu
+        // w przypadku exception
+        stack_data->keyMapping.insert({key, id});
+        stack_data->main_list.push_back({id, value});
+
+        if (stack_data->aux_lists.contains(id))
+            stack_data->aux_lists[id].push_back(V)
+    }
 
     template<typename K, typename V>
     void stack<K, V>::pop() {
