@@ -10,8 +10,8 @@
 
 
 namespace cxx {
-
     using std::shared_ptr;
+
     template<typename K, typename V> class stack {
         public:
             // 1 P
@@ -70,25 +70,36 @@ namespace cxx {
     };
 
     template<typename K, typename V>
+    void stack<K, V>::push(const K &, const V &) {
+
+    }
+
+    template<typename K, typename V>
     struct stack<K, V>::data_struct {
+        // key id
+        using kid_t             = uint64_t;
+        using counter_t         = size_t;
+        using sitem_t           = std::pair<kid_t, V>;
+        using main_stack_t      = std::list<sitem_t>;
+        using main_stack_cit_t  = const typename main_stack_t::iterator;
+        using aux_stack_item_t  = std::list<main_stack_cit_t>;
 
-        using stck = std::list<std::pair<uint64_t, V>>;
+        std::map<K, kid_t> keyMapping;
+        std::map<kid_t, aux_stack_item_t> aux_lists;
+        main_stack_t main_list;
 
-        std::map<K, uint64_t> keyMapping;
-        std::map<uint64_t, std::stack<const typename stck::iterator>> aux_lists;
-        stck main_list;
-
-        int usages;
+        size_t usages;
         
         data_struct(): usages(1) {}
 
-        data_struct(stck &main_list, std::map<K, std::stack<const typename stck::iterator>> & aux_lists, std::map<K, uint64_t> keyMapping):
+        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t > & aux_lists, std::map<K, kid_t> keyMapping):
             usages(1),
             aux_lists(aux_lists),
             main_list(main_list),
             keyMapping(keyMapping)
         {}
 
+        // TODO: albo zwracać np. optional<shared_ptr>?
         shared_ptr<data_struct> cpy_if_needed() {
             if (usages > 1) {
                 shared_ptr tmp = std::make_shared<data_struct>(main_list, aux_lists);
@@ -100,24 +111,24 @@ namespace cxx {
                 return shared_ptr(this);
             }
         }
-
     };
 
     template<typename K, typename V>
     void stack<K, V>::pop() {
 
-        if (data.get()->main_list.size() == 0) throw new std::invalid_argument("cannot pop from empty stack");
+        if (data.get()->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
 
         shared_ptr<data_struct> tmp;
         int usages_cpy = data.get()->usages;
+        // TODO: możliwe, że try catch niepotrzebny, bo wszystkie(?) operacje są noexcept
         try {
             tmp = data.get()->cpy_if_needed();
             K key = tmp.get()->main_list.front().first;
             tmp.get()->main_list.pop_front();
             tmp.get()->aux_lists.get(key).pop_front();
-        } catch (const std::exception& e) {
+        } catch (...) { // TODO: upewnić się, że to nic nie kopiuje, i łapie przez referencje
             data.get()->usages = usages_cpy; // ugly, TODO: make not ugly
-            throw e;
+            throw;
         }
         data = tmp;
     }
@@ -127,6 +138,8 @@ namespace cxx {
 
         size_t sz;
         try {
+            // TODO: może jakieś makra albo funkcje na dobieranie sie
+            //  do tych internal list?
             sz = data.get()->aux_lists.get(key).size();
         } catch (std::exception &e) {
             throw e;
@@ -135,6 +148,7 @@ namespace cxx {
         if (sz == 0) throw new std::invalid_argument("no element with given key");
 
         shared_ptr<data_struct> tmp;
+        // todo: podobny blok do tego wyżej - może da się wyciągnąć coś wspólnego?
         int usages_cpy = data.get()->usages;
         try {
             tmp = data.get()->cpy_if_needed();
