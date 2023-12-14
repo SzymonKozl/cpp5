@@ -15,9 +15,9 @@ namespace cxx {
     template<typename K, typename V> class stack {
         public:
             // 1 P
-            stack() noexcept;
+            stack();
             stack(stack const &) noexcept;
-            stack(stack &&);
+            stack(stack &&) noexcept;
             stack& operator=(stack);
             // 2 P
             void push(K const &, V const &);
@@ -30,9 +30,9 @@ namespace cxx {
             V & front(K const &);
             V const & front(K const &) const;
             // 5 P
-            size_t size() const;
+            size_t size() const noexcept;
             size_t count(K const &) const;
-            void clear();
+            void clear() noexcept;
             // S
             class const_iterator {
                 using iterator_category = std::forward_iterator_tag;
@@ -63,46 +63,43 @@ namespace cxx {
             // setting this member to false indicates that some non-const 
             // references to stack data may exist so making shallow copy
             // would be unsafe
-            bool can_be_shallow_copied = true;
+            bool can_be_shallow_copied;
             // 6 S
-            struct data_struct {
-                // key id
-                using kid_t             = uint64_t;
-                using counter_t         = size_t;
-                using sitem_t           = std::pair<kid_t, V>;
-                using main_stack_t      = std::list<sitem_t>;
-                using main_stack_cit_t  = const typename main_stack_t::iterator;
-                using aux_stack_item_t  = std::list<main_stack_cit_t>;
-
-                shared_ptr<data_struct> cpy_if_needed();
-
-            private:
-                std::map<K, kid_t> keyMapping;
-                std::map<kid_t, aux_stack_item_t> aux_lists;
-                main_stack_t main_list;
-
-                size_t usages;
-                kid_t next_kid;
-            };
+            struct data_struct;
             shared_ptr<data_struct> data;
     };
 
     template<typename K, typename V>
     struct stack<K, V>::data_struct {
-        data_struct(): usages(1) {}
+        // key id
+        using key_id_t          = uint64_t;
+        using main_stack_t      = std::list<std::pair<key_id_t, V>>;
+        using main_stack_cit_t  = const typename main_stack_t::iterator;
+        using aux_stack_item_t  = std::list<main_stack_cit_t>;
 
-        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, kid_t> keyMapping):
+        std::map<K, key_id_t> keyMapping;
+        std::map<key_id_t, aux_stack_item_t> aux_lists;
+        main_stack_t main_list;
+
+        size_t usages;
+        key_id_t next_key_id;
+
+        // TODO: move constructor do rvalue references
+
+        data_struct(): usages(1), next_key_id(1) {}
+
+        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping):
             usages(1),
-            next_kid(1),
+            next_key_id(1),
             aux_lists(aux_lists),
             main_list(main_list),
             keyMapping(keyMapping)
         {}
 
-        // TODO: albo zwracać np. optional<shared_ptr>?
+        // TODO: albo zwracać np. optional<shared_ptr>? uwzględniać to can_be_shallow_copied????
         shared_ptr<data_struct> cpy_if_needed() {
             if (usages > 1) {
-                shared_ptr tmp = std::make_shared<data_struct>(main_list, aux_lists);
+                shared_ptr tmp = copy();
                 usages --;
                 return tmp;
             }
@@ -111,20 +108,88 @@ namespace cxx {
                 return shared_ptr(this);
             }
         }
+
+        shared_ptr<data_struct> copy() {
+            return std::make_shared<data_struct>(main_list, aux_lists, keyMapping, next_key_id);
+        }
     };
 
     template<typename K, typename V>
+    stack<K, V>::stack() : data(std::make_shared<data_struct>()), can_be_shallow_copied(true) {}
+
+    template<typename K, typename V>
+    stack<K, V>::stack(const stack &other) noexcept {
+        if (other.can_be_shallow_copied) {
+            data = other.data;
+        } else {
+            data = other.data->copy();
+        }
+
+        other.data.usages++;
+        can_be_shallow_copied = true;
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::stack(stack &&other) noexcept : data(std::move(other.data)), can_be_shallow_copied(other.can_be_shallow_copied) {}
+
+    template<typename K, typename V>
+    stack<K, V> &stack<K, V>::operator=(stack other) {
+        std::swap(data, other.data);
+        std::swap(can_be_shallow_copied, other.can_be_shallow_copied);
+
+        return *this;
+    }
+
+    template<typename K, typename V>
+    size_t stack<K, V>::size() const noexcept {
+        return data->main_list.size();
+    }
+
+    template<typename K, typename V>
+    size_t stack<K, V>::count(const K &key) const {
+        if (!data->aux_lists.contains(key))
+            return 0;
+        return data->aux_lists[key].size();
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::clear() noexcept {
+        data = std::make_shared<data_struct>();
+    }
+
+    template<typename K, typename V>
     void stack<K, V>::push(const K &key, const V &value) {
-        shared_ptr<data_struct> stack_data = data->cpy_if_needed();
-        kid_t id = next_kid;
+        shared_ptr<data_struct> copied_data = data->cpy_if_needed(can_be_shallow_copied);
+        typename data_struct::key_id_t id = data;
 
         // todo: jeśli zostało skopiowane to nie przywracać, jesli nie to przywracać do poprzedniego stanu
         // w przypadku exception
-        stack_data->keyMapping.insert({key, id});
-        stack_data->main_list.push_back({id, value});
+        copied_data->keyMapping.insert({key, id});
+        try {
+            copied_data->main_list.push_back({id, value});
 
-        if (stack_data->aux_lists.contains(id))
-            stack_data->aux_lists[id].push_back(V)
+            try {
+                auto it = copied_data->main_list.cend();
+                copied_data->aux_lists[id].push_back(--it);
+            } catch (...) {
+                if (copied_data->aux_lists.contains(id)) {
+                    if (!copied_data->aux_lists[id].empty())
+                        copied_data->aux_lists[id].pop_back();
+
+                    if (copied_data->aux_lists[id].empty())
+                        copied_data->aux_lists.erase(id);
+                }
+
+                throw;
+            }
+
+        } catch (...) {
+            copied_data->keyMapping.erase(key);
+            throw;
+        }
+
+        ++copied_data->next_key_id;
+        data = copied_data;
     }
 
     template<typename K, typename V>
