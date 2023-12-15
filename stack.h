@@ -16,7 +16,7 @@ namespace cxx {
         public:
             // 1 P
             stack();
-            stack(stack const &) noexcept;
+            stack(stack const &);
             stack(stack &&) noexcept;
             stack& operator=(stack);
             // 2 P
@@ -84,8 +84,6 @@ namespace cxx {
         size_t usages;
         key_id_t next_key_id;
 
-        // TODO: move constructor do rvalue references
-
         data_struct(): usages(1), next_key_id(1) {}
 
         data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping):
@@ -96,11 +94,9 @@ namespace cxx {
             keyMapping(keyMapping)
         {}
 
-        // TODO: albo zwracać np. optional<shared_ptr>? uwzględniać to can_be_shallow_copied????
         shared_ptr<data_struct> cpy_if_needed() {
-            if (usages > 1) {
-                shared_ptr tmp = copy();
-                usages --;
+            if (usages > 1 || !can_be_shallow_copied) {
+                shared_ptr<data_struct> tmp = copy();
                 return tmp;
             }
             else {
@@ -118,7 +114,7 @@ namespace cxx {
     stack<K, V>::stack() : data(std::make_shared<data_struct>()), can_be_shallow_copied(true) {}
 
     template<typename K, typename V>
-    stack<K, V>::stack(const stack &other) noexcept {
+    stack<K, V>::stack(const stack &other) {
         if (other.can_be_shallow_copied) {
             data = other.data;
         } else {
@@ -199,16 +195,11 @@ namespace cxx {
 
         shared_ptr<data_struct> tmp;
         int usages_cpy = data.get()->usages;
-        // TODO: możliwe, że try catch niepotrzebny, bo wszystkie(?) operacje są noexcept
-        try {
-            tmp = data.get()->cpy_if_needed();
-            K key = tmp.get()->main_list.front().first;
-            tmp.get()->main_list.pop_front();
-            tmp.get()->aux_lists.get(key).pop_front();
-        } catch (...) { // TODO: upewnić się, że to nic nie kopiuje, i łapie przez referencje
-            data.get()->usages = usages_cpy; // ugly, TODO: make not ugly
-            throw;
-        }
+        tmp = data.get()->cpy_if_needed();
+        K key = tmp.get()->main_list.front().first;
+        tmp.get()->main_list.pop_front();
+        tmp.get()->aux_lists.get(key).pop_front();
+        if (data.get().usages > 1) data.get().usages --;
         data = tmp;
     }
 
@@ -216,28 +207,18 @@ namespace cxx {
     void stack<K, V>::pop(K const &key) {
 
         size_t sz;
-        try {
-            // TODO: może jakieś makra albo funkcje na dobieranie sie
-            //  do tych internal list?
-            sz = data.get()->aux_lists.get(key).size();
-        } catch (std::exception &e) {
-            throw e;
-        }
+        // TODO: może jakieś makra albo funkcje na dobieranie sie
+        //  do tych internal list?
+        sz = data.get()->aux_lists.get(key).size();
 
         if (sz == 0) throw new std::invalid_argument("no element with given key");
 
         shared_ptr<data_struct> tmp;
-        // todo: podobny blok do tego wyżej - może da się wyciągnąć coś wspólnego?
-        int usages_cpy = data.get()->usages;
-        try {
-            tmp = data.get()->cpy_if_needed();
-            auto iter = tmp.get()->aux_lists.get(key).front();
-            tmp.get()->aux_lists.get(key).pop_front();
-            tmp.get()->main_list.erase(iter);
-        } catch (const std::exception& e) {
-            data.get()->usages = usages_cpy; // again ugly, TODO: make not ugly
-            throw e;
-        }
+        tmp = data.get()->cpy_if_needed();
+        auto iter = tmp.get()->aux_lists.get(key).front();
+        tmp.get()->aux_lists.get(key).pop_front();
+        tmp.get()->main_list.erase(iter);
+        if (data.get().usages > 1) data.get().usages --;
         data = tmp;
     }
 
