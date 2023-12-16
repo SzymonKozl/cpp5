@@ -16,6 +16,7 @@ namespace cxx {
         public:
             // 1 P
             stack();
+            ~stack() = default;
             stack(stack const &);
             stack(stack &&) noexcept;
             stack& operator=(stack);
@@ -69,6 +70,7 @@ namespace cxx {
             shared_ptr<data_struct> data;
 
             std::pair<K const&, V&> _front();
+            void fork_data_if_needed();
     };
 
     template<typename K, typename V>
@@ -97,7 +99,6 @@ namespace cxx {
         {}
 
         /**
-         * \brief Makes a copy of this struct if it is needed.
          * \return If a copy was performed, returns a pointer to the copied struct.
          */
         shared_ptr<data_struct> cpy_if_needed() {
@@ -107,7 +108,7 @@ namespace cxx {
             }
             else {
                 // creating additional shared_ptr that is meant to replace existing
-                return shared_ptr(this); // TODO: to chyba może dać segfaulta - bo będzie kilka shared pointerów zarządzających tą samą piamięcią
+                return shared_ptr(this); // TODO: czy to może dać segfaulta?? bo dwa shared_ptr będą zarządzały tą samą pamięcią?
             }
         }
 
@@ -258,6 +259,14 @@ namespace cxx {
         V& val = data->main_list.front().second;
         K const& key = *data->aux_lists[key_id].front();
         return {key, val};
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::fork_data_if_needed() {
+        if (!can_be_shallow_copied) {
+            data = data->cpy_if_needed();
+            can_be_shallow_copied = true;
+        }
     }
 
     template<typename K, typename V>
