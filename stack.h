@@ -63,10 +63,12 @@ namespace cxx {
             // setting this member to false indicates that some non-const 
             // references to stack data may exist so making shallow copy
             // would be unsafe
-            bool can_be_shallow_copied;
+            bool can_be_shallow_copied = true;
             // 6 S
             struct data_struct;
             shared_ptr<data_struct> data;
+
+            std::pair<K const&, V&> _front();
     };
 
     template<typename K, typename V>
@@ -86,7 +88,7 @@ namespace cxx {
 
         data_struct(): usages(1), next_key_id(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping):
+        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping) :
             usages(1),
             next_key_id(1),
             aux_lists(aux_lists),
@@ -94,14 +96,18 @@ namespace cxx {
             keyMapping(keyMapping)
         {}
 
+        /**
+         * \brief Makes a copy of this struct if it is needed.
+         * \return If a copy was performed, returns a pointer to the copied struct.
+         */
         shared_ptr<data_struct> cpy_if_needed() {
-            if (usages > 1 || !can_be_shallow_copied) {
+            if (usages > 1) {
                 shared_ptr<data_struct> tmp = copy();
                 return tmp;
             }
             else {
                 // creating additional shared_ptr that is meant to replace existing
-                return shared_ptr(this);
+                return shared_ptr(this); // TODO: to chyba może dać segfaulta - bo będzie kilka shared pointerów zarządzających tą samą piamięcią
             }
         }
 
@@ -111,7 +117,7 @@ namespace cxx {
     };
 
     template<typename K, typename V>
-    stack<K, V>::stack() : data(std::make_shared<data_struct>()), can_be_shallow_copied(true) {}
+    stack<K, V>::stack() : data(std::make_shared<data_struct>()) {}
 
     template<typename K, typename V>
     stack<K, V>::stack(const stack &other) {
@@ -121,12 +127,12 @@ namespace cxx {
             data = other.data->copy();
         }
 
-        other.data.usages++;
+        ++data->usages;
         can_be_shallow_copied = true;
     }
 
     template<typename K, typename V>
-    stack<K, V>::stack(stack &&other) noexcept : data(std::move(other.data)), can_be_shallow_copied(other.can_be_shallow_copied) {}
+    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(std::move(other.data)) {}
 
     template<typename K, typename V>
     stack<K, V> &stack<K, V>::operator=(stack other) {
@@ -158,8 +164,6 @@ namespace cxx {
         shared_ptr<data_struct> copied_data = data->cpy_if_needed(can_be_shallow_copied);
         typename data_struct::key_id_t id = data;
 
-        // todo: jeśli zostało skopiowane to nie przywracać, jesli nie to przywracać do poprzedniego stanu
-        // w przypadku exception
         copied_data->keyMapping.insert({key, id});
         try {
             copied_data->main_list.push_back({id, value});
@@ -220,6 +224,40 @@ namespace cxx {
         tmp.get()->main_list.erase(iter);
         if (data.get().usages > 1) data.get().usages --;
         data = tmp;
+    }
+
+    template<typename K, typename V>
+    std::pair<K const&, V&> stack<K, V>::front() {
+        can_be_shallow_copied = false;
+        data = data->cpy_if_needed(); // TODO
+
+        return _front();
+    }
+
+    template<typename K, typename V>
+    std::pair<K const&, V const&> stack<K, V>::front() const {
+        return _front();
+    }
+
+    template<typename K, typename V>
+    V& stack<K, V>::front(K const&) {
+        can_be_shallow_copied = false;
+        data = data->cpy_if_needed(); // TODO
+
+        return _front().first;
+    }
+
+    template<typename K, typename V>
+    V const& stack<K, V>::front(K const&) const {
+        return _front().second;
+    }
+
+    template<typename K, typename V>
+    std::pair<K const&, V&> stack<K, V>::_front() {
+        typename data_struct::key_id_t key_id = data->main_list.front().first;
+        V& val = data->main_list.front().second;
+        K const& key = *data->aux_lists[key_id].front();
+        return {key, val};
     }
 
     template<typename K, typename V>
