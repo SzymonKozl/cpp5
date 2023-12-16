@@ -64,6 +64,11 @@ namespace cxx {
             const_iterator cbegin();
             const_iterator cend();
         private:
+            // key id
+            using key_id_t          = uint64_t;
+            using main_stack_t      = std::list<std::pair<key_id_t, V>>;
+            using main_stack_cit_t  = typename main_stack_t::iterator;
+            using aux_stack_item_t  = std::list<main_stack_cit_t>;
             // setting this member to false indicates that some non-const 
             // references to stack data may exist so making shallow copy
             // would be unsafe
@@ -81,11 +86,6 @@ namespace cxx {
 
     template<typename K, typename V>
     struct stack<K, V>::data_struct {
-        // key id
-        using key_id_t          = uint64_t;
-        using main_stack_t      = std::list<std::pair<key_id_t, V>>;
-        using main_stack_cit_t  = typename main_stack_t::iterator;
-        using aux_stack_item_t  = std::list<main_stack_cit_t>;
 
         std::map<K, key_id_t> keyMapping;
         std::map<key_id_t, typename std::map<K, key_id_t>::iterator> keyMappingRev; // reversed keyMapping
@@ -156,7 +156,7 @@ namespace cxx {
     size_t stack<K, V>::count(const K &key) const {
         if (!data->keyMapping.contains(key))
             return 0;
-        typename data_struct::key_id_t id = data->keyMapping[key];
+        key_id_t id = data->keyMapping[key];
         return data->aux_lists[id].size();
     }
 
@@ -168,34 +168,44 @@ namespace cxx {
     template<typename K, typename V>
     void stack<K, V>::push(const K &key, const V &value) {
         shared_ptr<data_struct> copied_data = fork_data_if_needed();
-        typename data_struct::key_id_t id;
+        key_id_t id;
+        typename std::map<K, key_id_t>::iterator keyMappingIter;
+        typename std::map<key_id_t, typename std::map<K, key_id_t>::iterator>::iterator keyMappingRevIter;
+        typename std::map<key_id_t, aux_stack_item_t>::iterator auxListIter;
+        bool delFromKeyMapping = false;
+        bool delFromKeyMappingRev = false;
+        bool delFromAuxList = false;
         if (copied_data->keyMapping.contains(key)) id = copied_data->keyMapping[key];
         else {
-            id = copied_data->next_key_id;
-            ++copied_data->next_key_id;
-            copied_data->keyMapping.insert({key, id});
-        }
-        copied_data->keyMappingRev.insert({id, copied_data->keyMapping.find(key)});
-        try {
-            copied_data->main_list.push_back({id, value});
-
             try {
-                auto it = copied_data->main_list.end();
-                copied_data->aux_lists[id].push_back(--it);
-            } catch (...) {
-                if (copied_data->aux_lists.contains(id)) {
-                    if (!copied_data->aux_lists[id].empty())
-                        copied_data->aux_lists[id].pop_back();
-
-                    if (copied_data->aux_lists[id].empty())
-                        copied_data->aux_lists.erase(id);
-                }
-
+                id = copied_data->next_key_id;
+                ++copied_data->next_key_id;
+                keyMappingIter = copied_data->keyMapping.insert({key, id}).first;
+                delFromKeyMapping = true;
+                keyMappingRevIter = copied_data->keyMappingRev.insert({id, copied_data->keyMapping.find(key)}).first;
+                delFromKeyMappingRev = true;
+                auxListIter = copied_data->aux_lists.insert({id, aux_stack_item_t()}).first;
+                delFromAuxList = true;
+            }
+            catch (...) {
+                if (delFromKeyMapping) copied_data->keyMapping.erase(keyMappingIter);
+                if (delFromKeyMappingRev) copied_data->keyMappingRev.erase(keyMappingRevIter);
+                if (delFromAuxList) copied_data->aux_lists.erase(auxListIter);
                 throw;
             }
-
+        }
+        bool remFromMainList = false;
+        typename main_stack_t::iterator mainListIter;
+        try {
+            mainListIter = copied_data->main_list.insert(copied_data->main_list.end(), {id, value});
+            remFromMainList = true;
+            auto it = copied_data->main_list.end();
+            copied_data->aux_lists[id].push_back(--it);
         } catch (...) {
-            copied_data->keyMapping.erase(key); // po chuj?
+            if (remFromMainList) copied_data->main_list.erase(mainListIter);
+            copied_data->keyMapping.erase(keyMappingIter);
+            copied_data->keyMappingRev.erase(keyMappingRevIter);
+            copied_data->aux_lists.erase(auxListIter);
             throw;
         }
 
@@ -227,7 +237,7 @@ namespace cxx {
 
         if (!data->keyMapping.contains(key)) throw std::invalid_argument("no elem with given key");
 
-        typename data_struct::key_id_t id = data->keyMapping[key];
+        key_id_t id = data->keyMapping[key];
 
         shared_ptr<data_struct> tmp;
         tmp = fork_data_if_needed(false);
@@ -272,7 +282,7 @@ namespace cxx {
 
     template<typename K, typename V>
     const std::pair<K const&, V const&> stack<K, V>::_front() const {
-        typename data_struct::key_id_t key_id = data->main_list.back().first;
+        key_id_t key_id = data->main_list.back().first;
         V& val = data->main_list.back().second;
         K const& key = data->keyMappingRev[key_id]->first;
         return {key, val};
@@ -280,7 +290,7 @@ namespace cxx {
 
     template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::_front() {
-        typename data_struct::key_id_t key_id = data->main_list.back().first;
+        key_id_t key_id = data->main_list.back().first;
         V& val = data->main_list.back().second;
         K const& key = data->keyMappingRev[key_id]->first;
         return {key, val};
@@ -292,7 +302,7 @@ namespace cxx {
             throw std::invalid_argument("no element with the given key");
         }
 
-        typename data_struct::key_id_t key_id = data->keyMapping[key];
+        key_id_t key_id = data->keyMapping[key];
         return data->aux_lists[key_id].back()->second;
     }
 
@@ -303,7 +313,7 @@ namespace cxx {
             throw std::invalid_argument("no element with the given key");
         }
 
-        typename data_struct::key_id_t key_id = data->keyMapping[key];
+        key_id_t key_id = data->keyMapping[key];
         return data->aux_lists[key_id].back()->second;
     }
 
