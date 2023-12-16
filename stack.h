@@ -1,6 +1,7 @@
 #ifndef __STACK_H__
 #define __STACK_H__
 
+#include <cassert>
 #include <utility>
 #include <map>
 #include <vector>
@@ -8,11 +9,12 @@
 #include <list>
 #include <stack>
 
-
 namespace cxx {
     using std::shared_ptr;
+    constexpr bool DEBUG = true;
 
-    template<typename K, typename V> class stack {
+    template<typename K, typename V>
+    class stack {
         public:
             // 1 P
             stack();
@@ -70,7 +72,8 @@ namespace cxx {
             shared_ptr<data_struct> data;
 
             std::pair<K const&, V&> _front();
-            void fork_data_if_needed();
+            V & _front(K const &);
+            shared_ptr<data_struct> fork_data_if_needed();
     };
 
     template<typename K, typename V>
@@ -85,35 +88,32 @@ namespace cxx {
         std::map<key_id_t, aux_stack_item_t> aux_lists;
         main_stack_t main_list;
 
-        size_t usages;
+        size_t use_count;
         key_id_t next_key_id;
 
-        data_struct(): usages(1), next_key_id(1) {}
+        data_struct(): use_count(1), next_key_id(1) {}
 
         data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping) :
-            usages(1),
+            use_count(1),
             next_key_id(1),
             aux_lists(aux_lists),
             main_list(main_list),
             keyMapping(keyMapping)
         {}
 
-        /**
-         * \return If a copy was performed, returns a pointer to the copied struct.
-         */
-        shared_ptr<data_struct> cpy_if_needed() {
-            if (usages > 1) {
-                shared_ptr<data_struct> tmp = copy();
-                return tmp;
+        // Automatically decrements the use_count!
+        shared_ptr<data_struct> duplicate(bool decrement = true) {
+            if constexpr (DEBUG) {
+                if (decrement) {
+                    assert(use_count >= 1);
+                }
             }
-            else {
-                // creating additional shared_ptr that is meant to replace existing
-                return shared_ptr(this); // TODO: czy to może dać segfaulta?? bo dwa shared_ptr będą zarządzały tą samą pamięcią?
-            }
-        }
 
-        shared_ptr<data_struct> copy() {
-            return std::make_shared<data_struct>(main_list, aux_lists, keyMapping, next_key_id);
+            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, aux_lists, keyMapping, next_key_id);
+            if (decrement) {
+                use_count--;
+            }
+            return cpy;
         }
     };
 
@@ -125,10 +125,10 @@ namespace cxx {
         if (other.can_be_shallow_copied) {
             data = other.data;
         } else {
-            data = other.data->copy();
+            data = other.data->duplicate();
         }
 
-        ++data->usages;
+        ++data->use_count;
         can_be_shallow_copied = true;
     }
 
@@ -162,8 +162,8 @@ namespace cxx {
 
     template<typename K, typename V>
     void stack<K, V>::push(const K &key, const V &value) {
-        shared_ptr<data_struct> copied_data = data->cpy_if_needed(can_be_shallow_copied);
-        typename data_struct::key_id_t id = data;
+        shared_ptr<data_struct> copied_data = fork_data_if_needed();
+        typename data_struct::key_id_t id = data->keyMapping[key];
 
         copied_data->keyMapping.insert({key, id});
         try {
@@ -199,12 +199,12 @@ namespace cxx {
         if (data.get()->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
 
         shared_ptr<data_struct> tmp;
-        int usages_cpy = data.get()->usages;
-        tmp = data.get()->cpy_if_needed();
+        int usages_cpy = data.get()->use_count;
+        tmp = fork_data_if_needed(false);
         K key = tmp.get()->main_list.front().first;
         tmp.get()->main_list.pop_front();
         tmp.get()->aux_lists.get(key).pop_front();
-        if (data.get().usages > 1) data.get().usages --;
+        if (data.get().use_count > 1) data.get().use_count --;
         data = tmp;
     }
 
@@ -219,11 +219,11 @@ namespace cxx {
         if (sz == 0) throw new std::invalid_argument("no element with given key");
 
         shared_ptr<data_struct> tmp;
-        tmp = data.get()->cpy_if_needed();
+        tmp = fork_data_if_needed(false);
         auto iter = tmp.get()->aux_lists.get(key).front();
         tmp.get()->aux_lists.get(key).pop_front();
         tmp.get()->main_list.erase(iter);
-        if (data.get().usages > 1) data.get().usages --;
+        if (data.get().use_count > 1) data.get().use_count --;
         data = tmp;
     }
 
@@ -243,14 +243,14 @@ namespace cxx {
     template<typename K, typename V>
     V& stack<K, V>::front(K const&) {
         can_be_shallow_copied = false;
-        data = data->cpy_if_needed(); // TODO
+        fork_data_if_needed();
 
         return _front().first;
     }
 
     template<typename K, typename V>
-    V const& stack<K, V>::front(K const&) const {
-        return _front().second;
+    V const& stack<K, V>::front(K const& key) const {
+        return _front(key);
     }
 
     template<typename K, typename V>
@@ -262,11 +262,34 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    void stack<K, V>::fork_data_if_needed() {
-        if (!can_be_shallow_copied) {
-            data = data->cpy_if_needed();
+    V& stack<K, V>::_front(K const& key) {
+        if (!data->keyMapping.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        typename data_struct::key_id_t key_id = data->keyMapping[key];
+        return *data->aux_lists[key_id].front();
+    }
+
+    /**
+     * \brief Forks the data_struct if a reference to a
+     *  data item was returned to an outside object, or
+     *  if at least one other stack uses the same underlying
+     *  data object.
+     */
+    template<typename K, typename V>
+    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed() {
+        shared_ptr<data_struct> data_cpy = data;
+        if (data->use_count == 1) {
             can_be_shallow_copied = true;
         }
+
+        if (!can_be_shallow_copied || data->use_count > 1) {
+            data_cpy = data->duplicate();
+            can_be_shallow_copied = true;
+        }
+
+        return data_cpy;
     }
 
     template<typename K, typename V>
