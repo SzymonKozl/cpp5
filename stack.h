@@ -8,6 +8,7 @@
 #include <memory>
 #include <list>
 #include <stack>
+#include <stdexcept>
 
 namespace cxx {
     using std::shared_ptr;
@@ -49,7 +50,7 @@ namespace cxx {
 
 
                 public:
-                    const_iterator(itnl_itr_ptr);
+                    const_iterator(itnl_itr);
                     const_iterator& operator ++();
                     const_iterator operator ++(int);
                     const K& operator *() const noexcept;
@@ -71,6 +72,8 @@ namespace cxx {
             struct data_struct;
             shared_ptr<data_struct> data;
 
+            const std::pair<K const&, V const&> _front() const;
+            const V & _front(K const &) const;
             std::pair<K const&, V&> _front();
             V & _front(K const &);
             shared_ptr<data_struct> fork_data_if_needed(bool auto_use_count_mgmt = true);
@@ -85,6 +88,7 @@ namespace cxx {
         using aux_stack_item_t  = std::list<main_stack_cit_t>;
 
         std::map<K, key_id_t> keyMapping;
+        std::map<key_id_t, typename std::map<K, key_id_t>::iterator> keyMappingRev; // reversed keyMapping
         std::map<key_id_t, aux_stack_item_t> aux_lists;
         main_stack_t main_list;
 
@@ -93,12 +97,13 @@ namespace cxx {
 
         data_struct(): use_count(1), next_key_id(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<K, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping) :
+        data_struct(main_stack_t &main_list, std::map<key_id_t, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping, std::map<key_id_t, typename std::map<K, key_id_t>::iterator> keyMappingRev, key_id_t next_key_id = 1) :
             use_count(1),
-            next_key_id(1),
+            next_key_id(next_key_id),
             aux_lists(aux_lists),
             main_list(main_list),
-            keyMapping(keyMapping)
+            keyMapping(keyMapping),
+            keyMappingRev(keyMappingRev)
         {}
 
         // Automatically decrements the use_count!
@@ -109,7 +114,7 @@ namespace cxx {
                 }
             }
 
-            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, aux_lists, keyMapping, next_key_id);
+            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, aux_lists, keyMapping, keyMappingRev, next_key_id);
             if (decrement) {
                 use_count--;
             }
@@ -157,9 +162,13 @@ namespace cxx {
     template<typename K, typename V>
     void stack<K, V>::push(const K &key, const V &value) {
         shared_ptr<data_struct> copied_data = fork_data_if_needed();
-        typename data_struct::key_id_t id = data->keyMapping[key];
-
-        copied_data->keyMapping.insert({key, id});
+        typename data_struct::key_id_t id;
+        if (copied_data->keyMapping.contains(key)) id = copied_data->keyMapping[key];
+        else {
+            id = copied_data->next_key_id;
+            copied_data->keyMapping.insert({key, id});
+        }
+        copied_data->keyMappingRev.insert({id, copied_data->keyMapping.find(key)});
         try {
             copied_data->main_list.push_back({id, value});
 
@@ -179,7 +188,7 @@ namespace cxx {
             }
 
         } catch (...) {
-            copied_data->keyMapping.erase(key);
+            copied_data->keyMapping.erase(key); // po chuj?
             throw;
         }
 
@@ -194,9 +203,9 @@ namespace cxx {
 
         shared_ptr<data_struct> tmp;
         tmp = fork_data_if_needed(false);
-        K key = tmp->main_list.front().first;
-        tmp->main_list.pop_front();
-        tmp->aux_lists.at(key).pop_front();
+        key_t key = tmp->main_list.back().first;
+        tmp->main_list.pop_back();
+        tmp->aux_lists.at(key).pop_back();
         if (data->use_count > 1) data->use_count--;
         data = tmp;
     }
@@ -213,8 +222,8 @@ namespace cxx {
 
         shared_ptr<data_struct> tmp;
         tmp = fork_data_if_needed(false);
-        auto iter = tmp->aux_lists.at(key).front();
-        tmp->aux_lists.at(key).pop_front();
+        auto iter = tmp->aux_lists.at(key).back();
+        tmp->aux_lists.at(key).pop_back();
         tmp->main_list.erase(iter);
         if (data->use_count > 1) data->use_count--;
         data = tmp;
@@ -238,7 +247,7 @@ namespace cxx {
         can_be_shallow_copied = false;
         fork_data_if_needed();
 
-        return _front().first;
+        return _front().second;
     }
 
     template<typename K, typename V>
@@ -247,10 +256,18 @@ namespace cxx {
     }
 
     template<typename K, typename V>
+    const std::pair<K const&, V const&> stack<K, V>::_front() const {
+        typename data_struct::key_id_t key_id = data->main_list.back().first;
+        V& val = data->main_list.back().second;
+        K const& key = data->keyMappingRev[key_id]->first;
+        return {key, val};
+    }
+
+    template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::_front() {
-        typename data_struct::key_id_t key_id = data->main_list.front().first;
-        V& val = data->main_list.front().second;
-        K const& key = data->aux_lists[key_id].front()->second;
+        typename data_struct::key_id_t key_id = data->main_list.back().first;
+        V& val = data->main_list.back().second;
+        K const& key = data->keyMappingRev[key_id]->first;
         return {key, val};
     }
 
@@ -261,7 +278,18 @@ namespace cxx {
         }
 
         typename data_struct::key_id_t key_id = data->keyMapping[key];
-        return data->aux_lists[key_id].front()->second;
+        return data->aux_lists[key_id].back()->second;
+    }
+
+
+    template<typename K, typename V>
+    const V& stack<K, V>::_front(K const& key) const {
+        if (!data->keyMapping.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        typename data_struct::key_id_t key_id = data->keyMapping[key];
+        return data->aux_lists[key_id].back()->second;
     }
 
     /**
@@ -296,20 +324,20 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator::const_iterator(itnl_itr_ptr iter): iter(iter) {}
+    stack<K, V>::const_iterator::const_iterator(itnl_itr iter): iter(std::make_shared<itnl_itr>(iter)) {}
 
     template<typename K, typename V>
     typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator++() {
-        auto cpy = std::make_shared<itnl_itr>(iter.get());
-        cpy.get() ++;
+        auto cpy = std::make_shared<itnl_itr>(*iter.get());
+        (*cpy.get()) ++;
         iter.swap(cpy);
-        return &this;
+        return *this;
     }
 
     template<typename K, typename V>
     typename stack<K, V>::const_iterator stack<K, V>::const_iterator::operator++(int) {
-        auto cpy1 = std::make_shared<itnl_itr>(iter.get());
-        auto cpy2 = std::make_shared<itnl_itr>(iter.get());
+        auto cpy1 = std::make_shared<itnl_itr>(*iter.get());
+        auto cpy2 = std::make_shared<itnl_itr>(*iter.get());
         cpy1.get() ++;
         const_iterator r(cpy2);
         iter.swap(cpy1);
@@ -318,7 +346,7 @@ namespace cxx {
 
     template<typename K, typename V>
     const K& stack<K, V>::const_iterator::operator*() const noexcept {
-        return *iter.get();
+        return (**iter.get()).first;
     }
 
     template<typename K, typename V>
@@ -328,7 +356,7 @@ namespace cxx {
 
     template<typename K, typename V>
     bool stack<K, V>::const_iterator::operator==(const const_iterator& other) const noexcept{
-        return (iter.get().operator->())==(other.iter.get().operator->());
+        return (iter.get()->operator->())==(other.iter.get()->operator->());
     }
 
     template<typename K, typename V>
