@@ -44,7 +44,7 @@ namespace cxx {
                 using pointer = K*;
                 using reference = K&;
 
-                using itnl_itr = std::map<K, uint64_t>::const_iterator;
+                using itnl_itr = std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
 
@@ -73,7 +73,7 @@ namespace cxx {
 
             std::pair<K const&, V&> _front();
             V & _front(K const &);
-            shared_ptr<data_struct> fork_data_if_needed();
+            shared_ptr<data_struct> fork_data_if_needed(bool auto_use_count_mgmt = true);
     };
 
     template<typename K, typename V>
@@ -122,14 +122,8 @@ namespace cxx {
 
     template<typename K, typename V>
     stack<K, V>::stack(const stack &other) {
-        if (other.can_be_shallow_copied) {
-            data = other.data;
-        } else {
-            data = other.data->duplicate();
-        }
-
+        data = other.data;
         ++data->use_count;
-        can_be_shallow_copied = true;
     }
 
     template<typename K, typename V>
@@ -170,7 +164,7 @@ namespace cxx {
             copied_data->main_list.push_back({id, value});
 
             try {
-                auto it = copied_data->main_list.cend();
+                auto it = copied_data->main_list.end();
                 copied_data->aux_lists[id].push_back(--it);
             } catch (...) {
                 if (copied_data->aux_lists.contains(id)) {
@@ -196,15 +190,14 @@ namespace cxx {
     template<typename K, typename V>
     void stack<K, V>::pop() {
 
-        if (data.get()->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
+        if (data->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
 
         shared_ptr<data_struct> tmp;
-        int usages_cpy = data.get()->use_count;
         tmp = fork_data_if_needed(false);
-        K key = tmp.get()->main_list.front().first;
-        tmp.get()->main_list.pop_front();
-        tmp.get()->aux_lists.get(key).pop_front();
-        if (data.get().use_count > 1) data.get().use_count --;
+        K key = tmp->main_list.front().first;
+        tmp->main_list.pop_front();
+        tmp->aux_lists.at(key).pop_front();
+        if (data->use_count > 1) data->use_count--;
         data = tmp;
     }
 
@@ -214,23 +207,23 @@ namespace cxx {
         size_t sz;
         // TODO: może jakieś makra albo funkcje na dobieranie sie
         //  do tych internal list?
-        sz = data.get()->aux_lists.get(key).size();
+        sz = data->aux_lists.at(key).size();
 
         if (sz == 0) throw new std::invalid_argument("no element with given key");
 
         shared_ptr<data_struct> tmp;
         tmp = fork_data_if_needed(false);
-        auto iter = tmp.get()->aux_lists.get(key).front();
-        tmp.get()->aux_lists.get(key).pop_front();
-        tmp.get()->main_list.erase(iter);
-        if (data.get().use_count > 1) data.get().use_count --;
+        auto iter = tmp->aux_lists.at(key).front();
+        tmp->aux_lists.at(key).pop_front();
+        tmp->main_list.erase(iter);
+        if (data->use_count > 1) data->use_count--;
         data = tmp;
     }
 
     template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::front() {
         can_be_shallow_copied = false;
-        data = data->cpy_if_needed(); // TODO
+        data = fork_data_if_needed();
 
         return _front();
     }
@@ -257,7 +250,7 @@ namespace cxx {
     std::pair<K const&, V&> stack<K, V>::_front() {
         typename data_struct::key_id_t key_id = data->main_list.front().first;
         V& val = data->main_list.front().second;
-        K const& key = *data->aux_lists[key_id].front();
+        K const& key = *data->aux_lists[key_id].front().second;
         return {key, val};
     }
 
@@ -278,14 +271,14 @@ namespace cxx {
      *  data object.
      */
     template<typename K, typename V>
-    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed() {
+    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed(bool auto_use_count_mgmt) {
         shared_ptr<data_struct> data_cpy = data;
         if (data->use_count == 1) {
             can_be_shallow_copied = true;
         }
 
         if (!can_be_shallow_copied || data->use_count > 1) {
-            data_cpy = data->duplicate();
+            data_cpy = data->duplicate(auto_use_count_mgmt);
             can_be_shallow_copied = true;
         }
 
@@ -294,12 +287,12 @@ namespace cxx {
 
     template<typename K, typename V>
     stack<K, V>::const_iterator stack<K, V>::cbegin() {
-        return const_iterator(data.keyMapping.cbegin());
+        return const_iterator(data->keyMapping.cbegin());
     }
 
     template<typename K, typename V>
     stack<K, V>::const_iterator stack<K, V>::cend() {
-        return const_iterator(data.keyMapping.cend());
+        return const_iterator(data->keyMapping.cend());
     }
 
     template<typename K, typename V>
