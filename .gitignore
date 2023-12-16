@@ -47,3 +47,6 @@ cmake-build-debug
 
 #SzymonKozl - local files
 test.cc
+
+#cmake
+build/*

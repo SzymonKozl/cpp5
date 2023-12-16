@@ -44,7 +44,7 @@ namespace cxx {
                 using pointer = K*;
                 using reference = K&;
 
-                using itnl_itr = std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
+                using itnl_itr = typename std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
 
@@ -81,7 +81,7 @@ namespace cxx {
         // key id
         using key_id_t          = uint64_t;
         using main_stack_t      = std::list<std::pair<key_id_t, V>>;
-        using main_stack_cit_t  = const typename main_stack_t::iterator;
+        using main_stack_cit_t  = typename main_stack_t::iterator;
         using aux_stack_item_t  = std::list<main_stack_cit_t>;
 
         std::map<K, key_id_t> keyMapping;
@@ -250,7 +250,7 @@ namespace cxx {
     std::pair<K const&, V&> stack<K, V>::_front() {
         typename data_struct::key_id_t key_id = data->main_list.front().first;
         V& val = data->main_list.front().second;
-        K const& key = *data->aux_lists[key_id].front().second;
+        K const& key = data->aux_lists[key_id].front()->second;
         return {key, val};
     }
 
@@ -261,7 +261,7 @@ namespace cxx {
         }
 
         typename data_struct::key_id_t key_id = data->keyMapping[key];
-        return *data->aux_lists[key_id].front();
+        return data->aux_lists[key_id].front()->second;
     }
 
     /**
@@ -286,12 +286,12 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator stack<K, V>::cbegin() {
+    typename stack<K, V>::const_iterator stack<K, V>::cbegin() {
         return const_iterator(data->keyMapping.cbegin());
     }
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator stack<K, V>::cend() {
+    typename stack<K, V>::const_iterator stack<K, V>::cend() {
         return const_iterator(data->keyMapping.cend());
     }
 
@@ -299,7 +299,7 @@ namespace cxx {
     stack<K, V>::const_iterator::const_iterator(itnl_itr_ptr iter): iter(iter) {}
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator++() {
+    typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator++() {
         auto cpy = std::make_shared<itnl_itr>(iter.get());
         cpy.get() ++;
         iter.swap(cpy);
@@ -307,7 +307,7 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator stack<K, V>::const_iterator::operator++(int) {
+    typename stack<K, V>::const_iterator stack<K, V>::const_iterator::operator++(int) {
         auto cpy1 = std::make_shared<itnl_itr>(iter.get());
         auto cpy2 = std::make_shared<itnl_itr>(iter.get());
         cpy1.get() ++;
