@@ -47,6 +47,10 @@ cmake-build-debug
 
 #SzymonKozl - local files
 test.cc
+fanki
+stack.cc
+testy.cpp
+throwingFunc.h
 
 #cmake
 build/*

@@ -85,8 +85,8 @@ namespace cxx {
 
             };
         
-            const_iterator cbegin();
-            const_iterator cend();
+            const_iterator cbegin() const;
+            const_iterator cend() const;
             
     };
 
@@ -314,12 +314,12 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    typename stack<K, V>::const_iterator stack<K, V>::cbegin() {
+    typename stack<K, V>::const_iterator stack<K, V>::cbegin() const {
         return const_iterator(data->keys.cbegin());
     }
 
     template<typename K, typename V>
-    typename stack<K, V>::const_iterator stack<K, V>::cend() {
+    typename stack<K, V>::const_iterator stack<K, V>::cend() const {
         return const_iterator(data->keys.cend());
     }
 
@@ -338,9 +338,8 @@ namespace cxx {
     template<typename K, typename V>
     typename stack<K, V>::const_iterator stack<K, V>::const_iterator::operator++(int) {
         auto cpy1 = std::make_shared<itnl_itr>(*iter.get());
-        auto cpy2 = std::make_shared<itnl_itr>(*iter.get());
-        cpy1.get() ++;
-        const_iterator r(cpy2);
+        (*cpy1.get()) ++;
+        const_iterator r(*iter.get());
         iter.swap(cpy1);
         return r;
     }
@@ -352,7 +351,7 @@ namespace cxx {
 
     template<typename K, typename V>
     const K* stack<K, V>::const_iterator::operator->() const noexcept {
-        return iter.get().operator->();
+        return &(iter.get()->operator->()->first);
     }
 
     template<typename K, typename V>
