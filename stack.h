@@ -38,6 +38,7 @@ namespace cxx {
             size_t size() const noexcept;
             size_t count(K const &key) const;
             void clear() noexcept;
+            
             // S
             class const_iterator {
                 using iterator_category = std::forward_iterator_tag;
@@ -46,7 +47,7 @@ namespace cxx {
                 using pointer = K*;
                 using reference = K&;
 
-                using itnl_itr = typename std::map<K, uint64_t>::const_iterator;
+                using itnl_itr = typename std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
 
@@ -64,8 +65,15 @@ namespace cxx {
             };
             const_iterator cbegin();
             const_iterator cend();
+            
         private:
-            // setting this member to false indicates that some non-const 
+            using key_id_t      = size_t;
+            using key_it_t      = typename std::map<K, key_id_t>::iterator;
+            using stack_t       = std::list<std::pair<key_it_t, V>>;
+            using stack_it_t    = std::list<std::pair<key_it_t, V>>::iterator;
+            using key_stack_t   = std::list<typename stack_t::iterator>;
+
+        // setting this member to false indicates that some non-const
             // references to stack data may exist so making shallow copy
             // would be unsafe
             bool can_share_data = true;
@@ -74,14 +82,11 @@ namespace cxx {
             shared_ptr<data_struct> data;
 
             shared_ptr<data_struct> modifiable_data();
+            void remove_element(shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
     };
 
     template<typename K, typename V>
     struct stack<K, V>::data_struct {
-        using key_id_t      = size_t;
-        using key_it_t      = typename std::map<K, key_id_t>::iterator;
-        using stack_t       = std::list<std::pair<key_it_t, V>>;
-        using key_stack_t   = std::list<typename stack_t::iterator>;
 
         std::map<K, key_id_t> keys;
         stack_t stack;
@@ -98,16 +103,91 @@ namespace cxx {
         }
     };
 
+    // Works for removing only the first element with a given key.
+    template<typename K, typename V>
+    void stack<K, V>::remove_element(shared_ptr<data_struct>& working_data, stack::stack_it_t stack_it, stack::key_it_t key_it) {
+        key_id_t key_id = *key_it;
+        if (working_data->key_stacks[key_id].size() == 1) {
+            working_data->keys.erase(key_it); // safe?
+            working_data->key_stacks.erase(key_id); // safe?
+        } else {
+            working_data->key_stacks[key_id].pop_front();
+        }
+        working_data->stack.erase(stack_it);
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::pop() {
+        if (data->stack.empty())
+            throw std::invalid_argument("cannot pop from an empty stack");
+
+        shared_ptr<data_struct> working_data = modifiable_data();
+        auto key_it = working_data->stack.front().first;
+        
+        remove_element(working_data, working_data->stack.begin(), key_it);
+
+        data = working_data;
+        can_share_data = true;
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::pop(const K &key) {
+        if (!data->keys.contains(key))
+            throw std::invalid_argument("no elem with the given key");
+
+        shared_ptr<data_struct> working_data = modifiable_data();
+        auto key_it = working_data->keys[key].begin();
+        auto stack_it = working_data->key_stacks[*key_it].front();
+
+        remove_element(working_data, stack_it, key_it);
+
+        data = working_data;
+        can_share_data = true;
+    }
+
     template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::front() {
         shared_ptr<data_struct> working_data = modifiable_data();
 
-        auto& [key_iterator, value] = working_data->stack.front();
+        auto const& [key_iterator, value] = working_data->stack.front();
         K const& key = key_iterator->first;
 
         data = working_data;
         can_share_data = false;
-        return {key, value}; // TODO: czy to przejdzie?
+        return {key, value};
+    }
+
+    template<typename K, typename V>
+    std::pair<const K &, const V &> stack<K, V>::front() const {
+        auto const& [key_iterator, value] = data->stack.front();
+        K const& key = key_iterator->first;
+        return {key, value};
+    }
+
+    template<typename K, typename V>
+    V &stack<K, V>::front(const K &key) {
+        shared_ptr<data_struct> working_data = modifiable_data();
+
+        if (!data->keys.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        key_id_t key_id = data->keys[key];
+        V& val = data->key_stacks[key_id].front()->second;
+
+        data = working_data;
+        can_share_data = false;
+        return val;
+    }
+
+    template<typename K, typename V>
+    V const &stack<K, V>::front(const K &key) const {
+        if (!data->keys.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        key_id_t key_id = data->keys[key];
+        return data->key_stacks[key_id].front()->second;
     }
 
     template<typename K, typename V>
