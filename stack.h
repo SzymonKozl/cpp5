@@ -1,6 +1,7 @@
 #ifndef __STACK_H__
 #define __STACK_H__
 
+// #include <iostream>
 #include <cassert>
 #include <sys/types.h>
 #include <utility>
@@ -98,15 +99,25 @@ namespace cxx {
 
         data_struct(): next_key_id(1) {}
 
-        data_struct(std::map<K, key_id_t>& keys, stack_t& stack, std::map<key_id_t, key_stack_t>& key_stacks, size_t next_key_id)
+        data_struct(std::map<K, key_id_t>& keys, stack_t& stack, size_t next_key_id)
             : keys(keys),
-              stack(stack),
-              key_stacks(key_stacks),
+              stack(),
               next_key_id(next_key_id) {
+
+            // reconstructing stack and key_stacks
+            for (auto it = stack.begin(); it != stack.end(); it++) {
+                key_it_t new_key_it = this->keys.find(it->first->first);
+                this->stack.push_back({new_key_it, it->second});
+            }
+
+            for (auto it = this->stack.begin(); it != this->stack.end(); it++) {
+                this->key_stacks[it->first->second].push_back(it);
+            }
         }
 
         shared_ptr<data_struct> duplicate() {
-            return std::make_shared<data_struct>(keys, stack, key_stacks, next_key_id);
+            // std::cout << "duplikacja!" << std::endl;
+            return std::make_shared<data_struct>(keys, stack, next_key_id);
         }
     };
 
@@ -272,8 +283,11 @@ namespace cxx {
 
     template<typename K, typename V>
     shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::modifiable_data() {
-        if (data.use_count() > 1)
+        if (data.use_count() > 1) {
+            // std::cout << "Pelna kopia!" << std::endl << std::flush;
+
             return data->duplicate();
+        }
         return data;
     }
 
