@@ -18,31 +18,48 @@ namespace cxx {
 
     template<typename K, typename V>
     class stack {
+        private:
+            using key_id_t      = size_t;
+            using key_it_t      = typename std::map<K, key_id_t>::iterator;
+            using stack_t       = std::list<std::pair<key_it_t, V>>;
+            using stack_it_t    = typename std::list<std::pair<key_it_t, V>>::iterator;
+            using key_stack_t   = std::list<typename stack_t::iterator>;
+
+            // setting this member to false indicates that some non-const
+            // references to stack data may exist so making shallow copy
+            // would be unsafe
+            bool can_share_data = true;
+            // 6 S
+            struct data_struct;
+            shared_ptr<data_struct> data;
+
+            // Returns data_struct instance on which modifications can be done.
+            // When no other stack object shares data with current instance
+            // returns pointer to current data. Otherwise copy of data 
+            // structures is made.
+            shared_ptr<data_struct> modifiable_data();
+
+            void remove_element(
+                shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
         public:
-            // 1 P
             stack();
             ~stack() = default;
             stack(stack const &other);
             stack(stack &&other) noexcept;
             stack& operator=(stack other);
-            // 2 P
             void push(K const &key, V const &val);
-            // 3 S
             void pop();
             void pop(K const &key);
-            // 4 P
             std::pair<K const &, V &> front();
             std::pair<K const &, V const &> front() const;
             V & front(K const &key);
             V const & front(K const &key) const;
-            // 5 P
             size_t size() const noexcept;
             size_t count(K const &key) const;
             void clear() noexcept;
             
-            // S
             class const_iterator {
-                using itnl_itr = typename std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
+                using itnl_itr = typename std::map<K, key_id_t>::const_iterator;
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
             public:
@@ -67,27 +84,10 @@ namespace cxx {
                 itnl_itr_ptr iter;
 
             };
-        const_iterator cbegin();
-        const_iterator cend();
+        
+            const_iterator cbegin();
+            const_iterator cend();
             
-        private:
-            using key_id_t      = size_t;
-            using key_it_t      = typename std::map<K, key_id_t>::iterator;
-            using stack_t       = std::list<std::pair<key_it_t, V>>;
-            using stack_it_t    = typename std::list<std::pair<key_it_t, V>>::iterator;
-            using key_stack_t   = std::list<typename stack_t::iterator>;
-
-            // setting this member to false indicates that some non-const
-            // references to stack data may exist so making shallow copy
-            // would be unsafe
-            bool can_share_data = true;
-            // 6 S
-            struct data_struct;
-            shared_ptr<data_struct> data;
-
-            shared_ptr<data_struct> modifiable_data();
-            void remove_element(shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
-
     };
 
     template<typename K, typename V>
@@ -134,7 +134,9 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::stack(stack &&other) noexcept : can_share_data(other.can_share_data), data(std::move(other.data)) {}
+    stack<K, V>::stack(stack &&other) noexcept :
+        can_share_data(other.can_share_data),
+        data(std::move(other.data)) {}
 
     template<typename K, typename V>
     stack<K, V> &stack<K, V>::operator=(stack other) {
@@ -174,7 +176,8 @@ namespace cxx {
         bool remove_from_main_list = false;
         stack_it_t main_list_iter;
         try {
-            main_list_iter = copied_data->stack.insert(copied_data->stack.begin(), {keys_iter, value});
+            main_list_iter = copied_data->stack.insert(
+                copied_data->stack.begin(), {keys_iter, value});
             remove_from_main_list = true;
             auto it = copied_data->stack.begin();
             copied_data->key_stacks[id].push_front(it);
@@ -295,7 +298,11 @@ namespace cxx {
 
     // Works for removing only the first element with a given key.
     template<typename K, typename V>
-    void stack<K, V>::remove_element(shared_ptr<data_struct>& working_data, stack::stack_it_t stack_it, stack::key_it_t key_it) {
+    void stack<K, V>::remove_element(
+        shared_ptr<data_struct>& working_data,
+        stack::stack_it_t stack_it,
+        stack::key_it_t key_it) 
+    {
         key_id_t key_id = key_it->second;
         if (working_data->key_stacks[key_id].size() == 1) {
             working_data->keys.erase(key_it); // safe?
@@ -317,7 +324,8 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::const_iterator::const_iterator(itnl_itr iter): iter(std::make_shared<itnl_itr>(iter)) {}
+    stack<K, V>::const_iterator::const_iterator(itnl_itr iter):
+        iter(std::make_shared<itnl_itr>(iter)) {}
 
     template<typename K, typename V>
     typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator++() {
@@ -349,7 +357,7 @@ namespace cxx {
 
     template<typename K, typename V>
     bool stack<K, V>::const_iterator::operator==(const const_iterator& other) const noexcept{
-        if (!iter && !other.iter) return true; // two value-initialized iterators should be the same 
+        if (!iter && !other.iter) return true; // two value-initialized iterators should be equal
         return (iter.get()->operator->())==(other.iter.get()->operator->());
     }
 
@@ -359,7 +367,9 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator=(const const_iterator& other) {
+    typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator=(
+        const const_iterator& other) 
+    {
         iter = other.iter;
     }
 
