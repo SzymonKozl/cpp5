@@ -28,7 +28,6 @@ namespace cxx {
             // references to stack data may exist so making shallow copy
             // would be unsafe
             bool can_share_data = true;
-            // 6 S
             struct data_struct;
             shared_ptr<data_struct> data;
 
