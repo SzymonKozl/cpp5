@@ -10,7 +10,6 @@
 #include <list>
 #include <stack>
 #include <stdexcept>
-#include <iostream>
 #include <iterator>
 
 namespace cxx {
