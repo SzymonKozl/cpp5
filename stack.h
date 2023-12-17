@@ -382,6 +382,7 @@ namespace cxx {
 
     template<typename K, typename V>
     bool stack<K, V>::const_iterator::operator==(const const_iterator& other) const noexcept{
+        if (!iter && !other.iter) return true; // two value-initialized iterators should be the same 
         return (iter.get()->operator->())==(other.iter.get()->operator->());
     }
 
@@ -397,7 +398,7 @@ namespace cxx {
 
     template<typename K, typename V>
     stack<K, V>::const_iterator::const_iterator() {
-        iter = itnl_itr_ptr();
+        iter = itnl_itr_ptr(nullptr);
     }
 
     template<typename K, typename V>
