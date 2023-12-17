@@ -70,7 +70,7 @@ namespace cxx {
             using key_id_t      = size_t;
             using key_it_t      = typename std::map<K, key_id_t>::iterator;
             using stack_t       = std::list<std::pair<key_it_t, V>>;
-            using stack_it_t    = std::list<std::pair<key_it_t, V>>::iterator;
+            using stack_it_t    = typename std::list<std::pair<key_it_t, V>>::iterator;
             using key_stack_t   = std::list<typename stack_t::iterator>;
 
         // setting this member to false indicates that some non-const
@@ -91,11 +91,13 @@ namespace cxx {
         std::map<K, key_id_t> keys;
         stack_t stack;
         std::map<key_id_t, key_stack_t> key_stacks;
+        size_t next_key_id;
 
         data_struct(std::map<K, key_id_t>& keys, stack_t& stack, std::map<key_id_t, key_stack_t>& key_stacks)
             : keys(keys),
               stack(stack),
-              key_stacks(key_stacks) {
+              key_stacks(key_stacks),
+              next_key_id(1) {
         }
 
         shared_ptr<data_struct> duplicate() {
@@ -103,17 +105,50 @@ namespace cxx {
         }
     };
 
-    // Works for removing only the first element with a given key.
-    template<typename K, typename V>
-    void stack<K, V>::remove_element(shared_ptr<data_struct>& working_data, stack::stack_it_t stack_it, stack::key_it_t key_it) {
-        key_id_t key_id = *key_it;
-        if (working_data->key_stacks[key_id].size() == 1) {
-            working_data->keys.erase(key_it); // safe?
-            working_data->key_stacks.erase(key_id); // safe?
+
+        template<typename K, typename V>
+    void stack<K, V>::push(const K &key, const V &value) {
+        shared_ptr<data_struct> copied_data = modifiable_data();
+        key_id_t id;
+        key_it_t keysIter;
+        typename std::map<key_id_t, key_stack_t>::iterator auxListIter;
+        bool delFromkeys = false;
+        bool delFromAuxList = false;
+
+        if (copied_data->keys.contains(key)) {
+            id = copied_data->keys[key];
         } else {
-            working_data->key_stacks[key_id].pop_front();
+            try {
+                id = copied_data->next_key_id;
+                keysIter = copied_data->keys.insert({key, id}).first;
+                delFromkeys = true;
+                auxListIter = copied_data->key_stacks.insert({id, key_stack_t()}).first;
+                delFromAuxList = true;
+            }
+            catch (...) {
+                if (delFromkeys) copied_data->keys.erase(keysIter);
+                if (delFromAuxList) copied_data->key_stacks.erase(auxListIter);
+                throw;
+            }
         }
-        working_data->stack.erase(stack_it);
+
+        bool remFromMainList = false;
+        stack_it_t mainListIter;
+        try {
+            mainListIter = copied_data->stack.insert(copied_data->stack.begin(), {keysIter, value});
+            remFromMainList = true;
+            auto it = copied_data->stack.begin();
+            copied_data->key_stacks[id].push_front(it);
+            if (delFromkeys) ++copied_data->next_key_id;
+        } catch (...) {
+            if (remFromMainList) copied_data->stack.erase(mainListIter);
+            copied_data->keys.erase(keysIter);
+            copied_data->key_stacks.erase(auxListIter);
+            throw;
+        }
+
+        data = copied_data;
+        can_share_data = true;
     }
 
     template<typename K, typename V>
@@ -136,8 +171,8 @@ namespace cxx {
             throw std::invalid_argument("no elem with the given key");
 
         shared_ptr<data_struct> working_data = modifiable_data();
-        auto key_it = working_data->keys[key].begin();
-        auto stack_it = working_data->key_stacks[*key_it].front();
+        key_it_t key_it = working_data->keys[key].begin();
+        stack_it_t stack_it = working_data->key_stacks[*key_it].front();
 
         remove_element(working_data, stack_it, key_it);
 
@@ -191,10 +226,41 @@ namespace cxx {
     }
 
     template<typename K, typename V>
+    size_t stack<K, V>::size() const noexcept {
+        return data->stack.size();
+    }
+
+    template<typename K, typename V>
+    size_t stack<K, V>::count(const K &key) const {
+        if (!data->keys.contains(key))
+            return 0;
+        key_id_t id = data->keys[key];
+        return data->key_stacks[id].size();
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::clear() noexcept {
+        data = std::make_shared<data_struct>();
+    }
+
+    template<typename K, typename V>
     shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::modifiable_data() {
         if (data.use_count() > 1)
             return data->duplicate();
         return data;
+    }
+
+    // Works for removing only the first element with a given key.
+    template<typename K, typename V>
+    void stack<K, V>::remove_element(shared_ptr<data_struct>& working_data, stack::stack_it_t stack_it, stack::key_it_t key_it) {
+        key_id_t key_id = key_it->second;
+        if (working_data->key_stacks[key_id].size() == 1) {
+            working_data->keys.erase(key_it); // safe?
+            working_data->key_stacks.erase(key_id); // safe?
+        } else {
+            working_data->key_stacks[key_id].pop_front();
+        }
+        working_data->stack.erase(stack_it);
     }
 }
 
