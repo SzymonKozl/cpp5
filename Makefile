@@ -1,12 +1,12 @@
-CXXFLAGS = -Wall -Wextra -std=c++20 -O2
-BINARIES = stack
+CXX = g++
+CXXFLAGS = -Wall -Wextra -std=c++20 -O2 -g
+BINARIES = stack_example
 
 all: $(BINARIES)
 
-stack.o: stack.h stack.cc
-stack_example.o: stack_example.cc
+stack_example.o: stack_example.cc stack.h
 
-stack: stack.o stack_example.o
+stack_example: stack_example.o
 	g++ $(CXXFLAGS) $^ -o $@
 
 clean:
