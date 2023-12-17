@@ -10,6 +10,7 @@
 #include <stack>
 #include <stdexcept>
 #include <iostream>
+#include <iterator>
 
 namespace cxx {
     using std::shared_ptr;
@@ -40,18 +41,22 @@ namespace cxx {
             void clear() noexcept;
             // S
             class const_iterator {
-                using iterator_category = std::forward_iterator_tag;
-                using difference_type = size_t;
-                using value_type = K;
-                using pointer = K*;
-                using reference = K&;
 
                 using itnl_itr = typename std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
-
                 public:
+                    using iterator_category = std::forward_iterator_tag;
+                    using difference_type = std::ptrdiff_t;
+                    using value_type = K;
+                    using pointer = K*;
+                    using reference = K&;
+
                     const_iterator(itnl_itr);
+                    const_iterator();
+                    const_iterator(const_iterator const&);
+                    const_iterator(const_iterator&&);
+                    const_iterator& operator=(const const_iterator&);
                     const_iterator& operator ++();
                     const_iterator operator ++(int);
                     const K& operator *() const noexcept;
@@ -133,7 +138,7 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(other.data) {}
+    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(std::move(other.data)) {}
 
     template<typename K, typename V>
     stack<K, V> &stack<K, V>::operator=(stack other) {
@@ -383,6 +388,26 @@ namespace cxx {
     template<typename K, typename V>
     bool stack<K, V>::const_iterator::operator!=(const const_iterator& other) const noexcept {
         return !this->operator==(other);
+    }
+
+    template<typename K, typename V>
+    typename stack<K, V>::const_iterator& stack<K, V>::const_iterator::operator=(const const_iterator& other) {
+        iter = other.iter;
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator::const_iterator() {
+        iter = itnl_itr_ptr();
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator::const_iterator(const_iterator const& other) {
+        iter = itnl_itr_ptr(other.iter);
+    }
+
+    template<typename K, typename V>
+    stack<K, V>::const_iterator::const_iterator(const_iterator && other) {
+        iter = itnl_itr_ptr(std::move(other.iter));
     }
 }
 
