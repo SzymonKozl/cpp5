@@ -154,23 +154,24 @@ namespace cxx {
         bool del_from_keys = false;
         bool del_from_aux_list = false;
 
+        try {
         if (copied_data->keys.contains(key)) {
             id = copied_data->keys[key];
+            keys_iter = copied_data->keys.find(key);
         } else {
-            try {
                 id = copied_data->next_key_id;
                 keys_iter = copied_data->keys.insert({key, id}).first;
                 del_from_keys = true;
                 aux_list_iter = copied_data->key_stacks.insert({id, key_stack_t()}).first;
                 del_from_aux_list = true;
             }
-            catch (...) {
-                if (del_from_keys)
-                    copied_data->keys.erase(keys_iter);
-                if (del_from_aux_list)
-                    copied_data->key_stacks.erase(aux_list_iter);
-                throw;
-            }
+        }
+        catch (...) {
+            if (del_from_keys)
+                copied_data->keys.erase(keys_iter);
+            if (del_from_aux_list)
+                copied_data->key_stacks.erase(aux_list_iter);
+            throw;
         }
 
         bool remove_from_main_list = false;
@@ -184,10 +185,12 @@ namespace cxx {
             if (del_from_keys)
                 ++copied_data->next_key_id;
         } catch (...) {
+            if (del_from_keys)
+                copied_data->keys.erase(keys_iter);
+            if (del_from_aux_list)
+                copied_data->key_stacks.erase(aux_list_iter);
             if (remove_from_main_list)
                 copied_data->stack.erase(main_list_iter);
-            copied_data->keys.erase(keys_iter);
-            copied_data->key_stacks.erase(aux_list_iter);
 
             throw;
         }
@@ -229,6 +232,8 @@ namespace cxx {
     template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::front() {
         shared_ptr<data_struct> working_data = modifiable_data();
+
+        if (working_data->stack.size() == 0) throw std::invalid_argument("calling front on empty stack");
 
         auto& [key_iterator, value] = working_data->stack.front();
         K const& key = key_iterator->first;
