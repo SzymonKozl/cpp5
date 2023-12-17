@@ -1,7 +1,6 @@
 #ifndef __STACK_H__
 #define __STACK_H__
 
-// #include <iostream>
 #include <cassert>
 #include <sys/types.h>
 #include <utility>
@@ -14,7 +13,6 @@
 
 namespace cxx {
     using std::shared_ptr;
-    constexpr bool DEBUG = true;
 
     template<typename K, typename V>
     class stack {
@@ -116,7 +114,6 @@ namespace cxx {
         }
 
         shared_ptr<data_struct> duplicate() {
-            // std::cout << "duplikacja!" << std::endl;
             return std::make_shared<data_struct>(keys, stack, next_key_id);
         }
     };
@@ -147,40 +144,44 @@ namespace cxx {
     void stack<K, V>::push(const K &key, const V &value) {
         shared_ptr<data_struct> copied_data = modifiable_data();
         key_id_t id;
-        key_it_t keysIter;
-        typename std::map<key_id_t, key_stack_t>::iterator auxListIter;
-        bool delFromkeys = false;
-        bool delFromAuxList = false;
+        key_it_t keys_iter;
+        typename std::map<key_id_t, key_stack_t>::iterator aux_list_iter;
+        bool del_from_keys = false;
+        bool del_from_aux_list = false;
 
         if (copied_data->keys.contains(key)) {
             id = copied_data->keys[key];
         } else {
             try {
                 id = copied_data->next_key_id;
-                keysIter = copied_data->keys.insert({key, id}).first;
-                delFromkeys = true;
-                auxListIter = copied_data->key_stacks.insert({id, key_stack_t()}).first;
-                delFromAuxList = true;
+                keys_iter = copied_data->keys.insert({key, id}).first;
+                del_from_keys = true;
+                aux_list_iter = copied_data->key_stacks.insert({id, key_stack_t()}).first;
+                del_from_aux_list = true;
             }
             catch (...) {
-                if (delFromkeys) copied_data->keys.erase(keysIter);
-                if (delFromAuxList) copied_data->key_stacks.erase(auxListIter);
+                if (del_from_keys)
+                    copied_data->keys.erase(keys_iter);
+                if (del_from_aux_list)
+                    copied_data->key_stacks.erase(aux_list_iter);
                 throw;
             }
         }
 
-        bool remFromMainList = false;
-        stack_it_t mainListIter;
+        bool remove_from_main_list = false;
+        stack_it_t main_list_iter;
         try {
-            mainListIter = copied_data->stack.insert(copied_data->stack.begin(), {keysIter, value});
-            remFromMainList = true;
+            main_list_iter = copied_data->stack.insert(copied_data->stack.begin(), {keys_iter, value});
+            remove_from_main_list = true;
             auto it = copied_data->stack.begin();
             copied_data->key_stacks[id].push_front(it);
-            if (delFromkeys) ++copied_data->next_key_id;
+            if (del_from_keys)
+                ++copied_data->next_key_id;
         } catch (...) {
-            if (remFromMainList) copied_data->stack.erase(mainListIter);
-            copied_data->keys.erase(keysIter);
-            copied_data->key_stacks.erase(auxListIter);
+            if (remove_from_main_list)
+                copied_data->stack.erase(main_list_iter);
+            copied_data->keys.erase(keys_iter);
+            copied_data->key_stacks.erase(aux_list_iter);
             throw;
         }
 
@@ -194,8 +195,8 @@ namespace cxx {
             throw std::invalid_argument("cannot pop from an empty stack");
 
         shared_ptr<data_struct> working_data = modifiable_data();
+
         auto key_it = working_data->stack.front().first;
-        
         remove_element(working_data, working_data->stack.begin(), key_it);
 
         data = working_data;
@@ -208,10 +209,10 @@ namespace cxx {
             throw std::invalid_argument("no elem with the given key");
 
         shared_ptr<data_struct> working_data = modifiable_data();
+
         key_it_t key_it = working_data->keys.find(key);
         key_id_t key_id = key_it->second;
         stack_it_t stack_it = working_data->key_stacks[key_id].front();
-
         remove_element(working_data, stack_it, key_it);
 
         data = working_data;
@@ -283,11 +284,8 @@ namespace cxx {
 
     template<typename K, typename V>
     shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::modifiable_data() {
-        if (data.use_count() > 1) {
-            // std::cout << "Pelna kopia!" << std::endl << std::flush;
-
+        if (data.use_count() > 1)
             return data->duplicate();
-        }
         return data;
     }
 
