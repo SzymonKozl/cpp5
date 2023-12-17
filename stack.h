@@ -10,6 +10,8 @@
 #include <list>
 #include <stack>
 #include <stdexcept>
+#include <iostream>
+#include <iterator>
 
 namespace cxx {
     using std::shared_ptr;
@@ -83,8 +85,6 @@ namespace cxx {
             struct data_struct;
             shared_ptr<data_struct> data;
 
-            shared_ptr<data_struct> modifiable_data();
-            void remove_element(shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
     };
 
     template<typename K, typename V>
@@ -182,6 +182,7 @@ namespace cxx {
                 copied_data->stack.erase(main_list_iter);
             copied_data->keys.erase(keys_iter);
             copied_data->key_stacks.erase(aux_list_iter);
+
             throw;
         }
 
