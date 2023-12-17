@@ -9,6 +9,7 @@
 #include <list>
 #include <stack>
 #include <stdexcept>
+#include <iostream>
 
 namespace cxx {
     using std::shared_ptr;
@@ -19,7 +20,7 @@ namespace cxx {
         public:
             // 1 P
             stack();
-            ~stack() = default;
+            ~stack();
             stack(stack const &);
             stack(stack &&) noexcept;
             stack& operator=(stack);
@@ -97,7 +98,7 @@ namespace cxx {
 
         data_struct(): use_count(1), next_key_id(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<key_id_t, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> keyMapping, std::map<key_id_t, typename std::map<K, key_id_t>::iterator> keyMappingRev, key_id_t next_key_id = 1) :
+        data_struct(main_stack_t &main_list, std::map<key_id_t, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> &keyMapping, std::map<key_id_t, typename std::map<K, key_id_t>::iterator> &keyMappingRev, key_id_t next_key_id = 1) :
             use_count(1),
             next_key_id(next_key_id),
             aux_lists(aux_lists),
@@ -148,6 +149,11 @@ namespace cxx {
     }
 
     template<typename K, typename V>
+    stack<K, V>::~stack() {
+        data->use_count --;
+    }
+
+    template<typename K, typename V>
     size_t stack<K, V>::size() const noexcept {
         return data->main_list.size();
     }
@@ -179,7 +185,6 @@ namespace cxx {
         else {
             try {
                 id = copied_data->next_key_id;
-                ++copied_data->next_key_id;
                 keyMappingIter = copied_data->keyMapping.insert({key, id}).first;
                 delFromKeyMapping = true;
                 keyMappingRevIter = copied_data->keyMappingRev.insert({id, copied_data->keyMapping.find(key)}).first;
@@ -201,6 +206,7 @@ namespace cxx {
             remFromMainList = true;
             auto it = copied_data->main_list.end();
             copied_data->aux_lists[id].push_back(--it);
+            if (delFromKeyMapping) ++copied_data->next_key_id;
         } catch (...) {
             if (remFromMainList) copied_data->main_list.erase(mainListIter);
             copied_data->keyMapping.erase(keyMappingIter);
@@ -218,11 +224,17 @@ namespace cxx {
 
         if (data->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
 
-        shared_ptr<data_struct> tmp;
-        tmp = fork_data_if_needed(false);
-        key_t key = tmp->main_list.back().first;
+        shared_ptr<data_struct> tmp = fork_data_if_needed(false);
+        key_id_t key = tmp->main_list.back().first;
+        const K& k = (*tmp->keyMappingRev[key]).first;
+
         tmp->main_list.pop_back();
-        tmp->aux_lists.at(key).pop_back();
+        if (tmp->aux_lists[key].size() == 1) {
+            tmp->keyMapping.erase(k); // unsafe - might throw sth on comapring between K type
+            tmp->keyMappingRev.erase(key); // safe - compare on size_t is ok (?)
+            tmp->aux_lists.erase(key); // as above
+        }
+        else tmp->aux_lists.at(key).pop_back(); // should not throw anything
         if (data->use_count > 1) data->use_count--;
         data = tmp;
         can_be_shallow_copied = true;
@@ -242,13 +254,13 @@ namespace cxx {
         shared_ptr<data_struct> tmp;
         tmp = fork_data_if_needed(false);
         auto iter = tmp->aux_lists.at(id).back();
-        tmp->aux_lists.at(id).pop_back();
-        tmp->main_list.erase(iter);
-        if (tmp->aux_lists.at(id).size() == 0) {
-            tmp->aux_lists.erase(id);
+        if (tmp->aux_lists.at(id).size() == 1) {
             tmp->keyMapping.erase(key);
+            tmp->aux_lists.erase(id);
             tmp->keyMappingRev.erase(id);
         }
+        else tmp->aux_lists.at(id).pop_back();
+        tmp->main_list.erase(iter);
         if (data->use_count > 1) data->use_count--;
         data = tmp;
         can_be_shallow_copied = true;
@@ -283,7 +295,7 @@ namespace cxx {
     template<typename K, typename V>
     const std::pair<K const&, V const&> stack<K, V>::_front() const {
         key_id_t key_id = data->main_list.back().first;
-        V& val = data->main_list.back().second;
+        V const& val = data->main_list.back().second;
         K const& key = data->keyMappingRev[key_id]->first;
         return {key, val};
     }
@@ -327,9 +339,8 @@ namespace cxx {
     shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed(bool auto_use_count_mgmt) {
         shared_ptr<data_struct> data_cpy = data;
 
-        if (!can_be_shallow_copied || data->use_count > 1) {
+        if (data->use_count > 1) {
             data_cpy = data->duplicate(auto_use_count_mgmt);
-            can_be_shallow_copied = true;
         }
 
         return data_cpy;
