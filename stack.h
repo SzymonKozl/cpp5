@@ -20,7 +20,7 @@ namespace cxx {
         public:
             // 1 P
             stack();
-            ~stack();
+            ~stack() = default;
             stack(stack const &);
             stack(stack &&) noexcept;
             stack& operator=(stack);
@@ -82,7 +82,7 @@ namespace cxx {
             const V & _front(K const &) const;
             std::pair<K const&, V&> _front();
             V & _front(K const &);
-            shared_ptr<data_struct> fork_data_if_needed(bool auto_use_count_mgmt = true);
+            shared_ptr<data_struct> fork_data_if_needed();
     };
 
     template<typename K, typename V>
@@ -93,13 +93,11 @@ namespace cxx {
         std::map<key_id_t, aux_stack_item_t> aux_lists;
         main_stack_t main_list;
 
-        size_t use_count;
         key_id_t next_key_id;
 
-        data_struct(): use_count(1), next_key_id(1) {}
+        data_struct(): next_key_id(1) {}
 
         data_struct(main_stack_t &main_list, std::map<key_id_t, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> &keyMapping, std::map<key_id_t, typename std::map<K, key_id_t>::iterator> &keyMappingRev, key_id_t next_key_id = 1) :
-            use_count(1),
             next_key_id(next_key_id),
             aux_lists(aux_lists),
             main_list(main_list),
@@ -108,17 +106,9 @@ namespace cxx {
         {}
 
         // Automatically decrements the use_count!
-        shared_ptr<data_struct> duplicate(bool decrement = true) {
-            if constexpr (DEBUG) {
-                if (decrement) {
-                    assert(use_count >= 1);
-                }
-            }
+        shared_ptr<data_struct> duplicate() {
 
             shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, aux_lists, keyMapping, keyMappingRev, next_key_id);
-            if (decrement) {
-                use_count--;
-            }
             return cpy;
         }
     };
@@ -133,12 +123,11 @@ namespace cxx {
         }
         else {
             data = other.data;
-            ++data->use_count;
         }
     }
 
     template<typename K, typename V>
-    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(std::move(other.data)) {}
+    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(other.data) {}
 
     template<typename K, typename V>
     stack<K, V> &stack<K, V>::operator=(stack other) {
@@ -146,11 +135,6 @@ namespace cxx {
         std::swap(can_be_shallow_copied, other.can_be_shallow_copied);
 
         return *this;
-    }
-
-    template<typename K, typename V>
-    stack<K, V>::~stack() {
-        data->use_count --;
     }
 
     template<typename K, typename V>
@@ -224,7 +208,7 @@ namespace cxx {
 
         if (data->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
 
-        shared_ptr<data_struct> tmp = fork_data_if_needed(false);
+        shared_ptr<data_struct> tmp = fork_data_if_needed();
         key_id_t key = tmp->main_list.back().first;
         const K& k = (*tmp->keyMappingRev[key]).first;
 
@@ -235,7 +219,6 @@ namespace cxx {
             tmp->aux_lists.erase(key); // as above
         }
         else tmp->aux_lists.at(key).pop_back(); // should not throw anything
-        if (data->use_count > 1) data->use_count--;
         data = tmp;
         can_be_shallow_copied = true;
     }
@@ -252,7 +235,7 @@ namespace cxx {
         key_id_t id = data->keyMapping[key];
 
         shared_ptr<data_struct> tmp;
-        tmp = fork_data_if_needed(false);
+        tmp = fork_data_if_needed();
         auto iter = tmp->aux_lists.at(id).back();
         if (tmp->aux_lists.at(id).size() == 1) {
             tmp->keyMapping.erase(key);
@@ -261,15 +244,14 @@ namespace cxx {
         }
         else tmp->aux_lists.at(id).pop_back();
         tmp->main_list.erase(iter);
-        if (data->use_count > 1) data->use_count--;
         data = tmp;
         can_be_shallow_copied = true;
     }
 
     template<typename K, typename V>
     std::pair<K const&, V&> stack<K, V>::front() {
-        can_be_shallow_copied = false;
-        if (data->use_count > 1) data = fork_data_if_needed();
+        can_be_shallow_copied = false; // todo: rollback on fail
+        data = fork_data_if_needed();
 
         return _front();
     }
@@ -281,8 +263,8 @@ namespace cxx {
 
     template<typename K, typename V>
     V& stack<K, V>::front(K const& key) {
-        can_be_shallow_copied = false;
-        if (data->use_count > 1) fork_data_if_needed();
+        can_be_shallow_copied = false; // todo: rollback on fail
+        fork_data_if_needed();
 
         return _front(key);
     }
@@ -336,11 +318,11 @@ namespace cxx {
      *  data object.
      */
     template<typename K, typename V>
-    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed(bool auto_use_count_mgmt) {
+    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed() {
         shared_ptr<data_struct> data_cpy = data;
 
-        if (data->use_count > 1) {
-            data_cpy = data->duplicate(auto_use_count_mgmt);
+        if (data.use_count() > 2) { // copy created above should be not counted in total count
+            data_cpy = data->duplicate();
         }
 
         return data_cpy;
