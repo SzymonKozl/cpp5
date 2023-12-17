@@ -87,7 +87,7 @@ namespace cxx {
         stack_t stack;
         std::map<key_id_t, key_stack_t> key_stacks;
 
-        data_struct(std::map<key_id_t, K>& keys, stack_t& stack, std::map<key_id_t, key_stack_t>& key_stacks)
+        data_struct(std::map<K, key_id_t>& keys, stack_t& stack, std::map<key_id_t, key_stack_t>& key_stacks)
             : keys(keys),
               stack(stack),
               key_stacks(key_stacks) {
@@ -107,7 +107,7 @@ namespace cxx {
 
         data = working_data;
         can_share_data = false;
-        return key, value; // TODO: czy to przejdzie?
+        return {key, value}; // TODO: czy to przejdzie?
     }
 
     template<typename K, typename V>
