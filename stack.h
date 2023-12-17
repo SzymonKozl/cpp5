@@ -85,6 +85,9 @@ namespace cxx {
             struct data_struct;
             shared_ptr<data_struct> data;
 
+            shared_ptr<data_struct> modifiable_data();
+            void remove_element(shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
+
     };
 
     template<typename K, typename V>
