@@ -2,6 +2,7 @@
 #define __STACK_H__
 
 #include <cassert>
+#include <sys/types.h>
 #include <utility>
 #include <map>
 #include <vector>
@@ -14,7 +15,6 @@
 
 namespace cxx {
     using std::shared_ptr;
-    constexpr bool DEBUG = true;
 
     template<typename K, typename V>
     class stack {
@@ -22,105 +22,102 @@ namespace cxx {
             // 1 P
             stack();
             ~stack() = default;
-            stack(stack const &);
-            stack(stack &&) noexcept;
-            stack& operator=(stack);
+            stack(stack const &other);
+            stack(stack &&other) noexcept;
+            stack& operator=(stack other);
             // 2 P
-            void push(K const &, V const &);
+            void push(K const &key, V const &val);
             // 3 S
             void pop();
-            void pop(K const &);
+            void pop(K const &key);
             // 4 P
             std::pair<K const &, V &> front();
             std::pair<K const &, V const &> front() const;
-            V & front(K const &);
-            V const & front(K const &) const;
+            V & front(K const &key);
+            V const & front(K const &key) const;
             // 5 P
             size_t size() const noexcept;
-            size_t count(K const &) const;
+            size_t count(K const &key) const;
             void clear() noexcept;
+            
             // S
             class const_iterator {
-
                 using itnl_itr = typename std::map<K, uint64_t>::const_iterator; // TODO: key_id_t
                 using itnl_itr_ptr = shared_ptr<itnl_itr>;
 
-                public:
-                    using iterator_category = std::forward_iterator_tag;
-                    using difference_type = std::ptrdiff_t;
-                    using value_type = K;
-                    using pointer = K*;
-                    using reference = K&;
+            public:
+                using iterator_category = std::forward_iterator_tag;
+                using difference_type = std::ptrdiff_t;
+                using value_type = K;
+                using pointer = K*;
+                using reference = K&;
 
-                    const_iterator(itnl_itr);
-                    const_iterator();
-                    const_iterator(const_iterator const&);
-                    const_iterator(const_iterator&&);
-                    const_iterator& operator=(const const_iterator&);
-                    const_iterator& operator ++();
-                    const_iterator operator ++(int);
-                    const K& operator *() const noexcept;
-                    const K* operator ->() const noexcept;
-                    bool operator ==(const const_iterator & other) const noexcept;
-                    bool operator !=(const const_iterator & other) const noexcept;
-                private:
-                    itnl_itr_ptr iter;
+                const_iterator(itnl_itr);
+                const_iterator();
+                const_iterator(const_iterator const&);
+                const_iterator(const_iterator&&);
+                const_iterator& operator=(const const_iterator&);
+                const_iterator& operator ++();
+                const_iterator operator ++(int);
+                const K& operator *() const noexcept;
+                const K* operator ->() const noexcept;
+                bool operator ==(const const_iterator & other) const noexcept;
+                bool operator !=(const const_iterator & other) const noexcept;
+            private:
+                itnl_itr_ptr iter;
 
             };
-            const_iterator cbegin();
-            const_iterator cend();
+        const_iterator cbegin();
+        const_iterator cend();
+            
         private:
-            // key id
-            using key_id_t          = uint64_t;
-            using main_stack_t      = std::list<std::pair<key_id_t, V>>;
-            using main_stack_it_t  = typename main_stack_t::iterator;
-            using aux_stack_item_t  = std::list<main_stack_it_t>;
-            // setting this member to false indicates that some non-const 
+            using key_id_t      = size_t;
+            using key_it_t      = typename std::map<K, key_id_t>::iterator;
+            using stack_t       = std::list<std::pair<key_it_t, V>>;
+            using stack_it_t    = typename std::list<std::pair<key_it_t, V>>::iterator;
+            using key_stack_t   = std::list<typename stack_t::iterator>;
+
+            // setting this member to false indicates that some non-const
             // references to stack data may exist so making shallow copy
             // would be unsafe
-            bool can_be_shallow_copied = true;
+            bool can_share_data = true;
             // 6 S
             struct data_struct;
             shared_ptr<data_struct> data;
 
-            const std::pair<K const&, V const&> _front() const;
-            const V & _front(K const &) const;
-            std::pair<K const&, V&> _front();
-            V & _front(K const &);
-            shared_ptr<data_struct> fork_data_if_needed();
+            shared_ptr<data_struct> modifiable_data();
+            void remove_element(shared_ptr<data_struct>& working_data, stack_it_t stack_it, key_it_t key_it);
+
     };
 
     template<typename K, typename V>
     struct stack<K, V>::data_struct {
 
-        std::map<K, key_id_t> keyMapping;
-        std::map<key_id_t, typename std::map<K, key_id_t>::iterator> keyMappingRev; // reversed keyMapping
-        std::map<key_id_t, aux_stack_item_t> aux_lists;
-        main_stack_t main_list;
-
-        key_id_t next_key_id;
+        std::map<K, key_id_t> keys;
+        stack_t stack;
+        std::map<key_id_t, key_stack_t> key_stacks;
+        size_t next_key_id;
 
         data_struct(): next_key_id(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<K, key_id_t> &keyMapping, key_id_t next_key_id = 1) :
-            next_key_id(next_key_id),
-            main_list(main_list),
-            keyMapping(keyMapping)
-        {
-            // reconstructing aux_lists and keyMappingRev
-            for (auto it = keyMapping.begin(); it != keyMapping.end(); it ++) {
-                keyMappingRev.insert({it->second, it});
+        data_struct(std::map<K, key_id_t>& keys, stack_t& stack, size_t next_key_id)
+            : keys(keys),
+              stack(),
+              next_key_id(next_key_id) {
+
+            // reconstructing stack and key_stacks
+            for (auto it = stack.begin(); it != stack.end(); it++) {
+                key_it_t new_key_it = this->keys.find(it->first->first);
+                this->stack.push_back({new_key_it, it->second});
             }
 
-            for (auto it = main_list.begin(); it != main_list.end(); it ++) {
-                aux_lists[it->first].push_back(it);
+            for (auto it = this->stack.begin(); it != this->stack.end(); it++) {
+                this->key_stacks[it->first->second].push_back(it);
             }
         }
 
         shared_ptr<data_struct> duplicate() {
-
-            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, keyMapping, next_key_id);
-            return cpy;
+            return std::make_shared<data_struct>(keys, stack, next_key_id);
         }
     };
 
@@ -129,36 +126,159 @@ namespace cxx {
 
     template<typename K, typename V>
     stack<K, V>::stack(const stack &other) {
-        if (!other.can_be_shallow_copied) {
+        if (!other.can_share_data) {
             data = other.data->duplicate();
-        }
-        else {
+        } else {
             data = other.data;
         }
     }
 
     template<typename K, typename V>
-    stack<K, V>::stack(stack &&other) noexcept : can_be_shallow_copied(other.can_be_shallow_copied), data(std::move(other.data)) {}
+    stack<K, V>::stack(stack &&other) noexcept : can_share_data(other.can_share_data), data(std::move(other.data)) {}
 
     template<typename K, typename V>
     stack<K, V> &stack<K, V>::operator=(stack other) {
         std::swap(data, other.data);
-        std::swap(can_be_shallow_copied, other.can_be_shallow_copied);
-
+        std::swap(can_share_data, other.can_share_data);
         return *this;
     }
 
     template<typename K, typename V>
+    void stack<K, V>::push(const K &key, const V &value) {
+        shared_ptr<data_struct> copied_data = modifiable_data();
+        key_id_t id;
+        key_it_t keys_iter;
+        typename std::map<key_id_t, key_stack_t>::iterator aux_list_iter;
+        bool del_from_keys = false;
+        bool del_from_aux_list = false;
+
+        if (copied_data->keys.contains(key)) {
+            id = copied_data->keys[key];
+        } else {
+            try {
+                id = copied_data->next_key_id;
+                keys_iter = copied_data->keys.insert({key, id}).first;
+                del_from_keys = true;
+                aux_list_iter = copied_data->key_stacks.insert({id, key_stack_t()}).first;
+                del_from_aux_list = true;
+            }
+            catch (...) {
+                if (del_from_keys)
+                    copied_data->keys.erase(keys_iter);
+                if (del_from_aux_list)
+                    copied_data->key_stacks.erase(aux_list_iter);
+                throw;
+            }
+        }
+
+        bool remove_from_main_list = false;
+        stack_it_t main_list_iter;
+        try {
+            main_list_iter = copied_data->stack.insert(copied_data->stack.begin(), {keys_iter, value});
+            remove_from_main_list = true;
+            auto it = copied_data->stack.begin();
+            copied_data->key_stacks[id].push_front(it);
+            if (del_from_keys)
+                ++copied_data->next_key_id;
+        } catch (...) {
+            if (remove_from_main_list)
+                copied_data->stack.erase(main_list_iter);
+            copied_data->keys.erase(keys_iter);
+            copied_data->key_stacks.erase(aux_list_iter);
+
+            throw;
+        }
+
+        data = copied_data;
+        can_share_data = true;
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::pop() {
+        if (data->stack.empty())
+            throw std::invalid_argument("cannot pop from an empty stack");
+
+        shared_ptr<data_struct> working_data = modifiable_data();
+
+        auto key_it = working_data->stack.front().first;
+        remove_element(working_data, working_data->stack.begin(), key_it);
+
+        data = working_data;
+        can_share_data = true;
+    }
+
+    template<typename K, typename V>
+    void stack<K, V>::pop(const K &key) {
+        if (!data->keys.contains(key))
+            throw std::invalid_argument("no elem with the given key");
+
+        shared_ptr<data_struct> working_data = modifiable_data();
+
+        key_it_t key_it = working_data->keys.find(key);
+        key_id_t key_id = key_it->second;
+        stack_it_t stack_it = working_data->key_stacks[key_id].front();
+        remove_element(working_data, stack_it, key_it);
+
+        data = working_data;
+        can_share_data = true;
+    }
+
+    template<typename K, typename V>
+    std::pair<K const&, V&> stack<K, V>::front() {
+        shared_ptr<data_struct> working_data = modifiable_data();
+
+        auto& [key_iterator, value] = working_data->stack.front();
+        K const& key = key_iterator->first;
+
+        data = working_data;
+        can_share_data = false;
+        return {key, value};
+    }
+
+    template<typename K, typename V>
+    std::pair<const K &, const V &> stack<K, V>::front() const {
+        auto const& [key_iterator, value] = data->stack.front();
+        K const& key = key_iterator->first;
+        return {key, value};
+    }
+
+    template<typename K, typename V>
+    V &stack<K, V>::front(const K &key) {
+        shared_ptr<data_struct> working_data = modifiable_data();
+
+        if (!data->keys.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        key_id_t key_id = data->keys[key];
+        V& val = data->key_stacks[key_id].front()->second;
+
+        data = working_data;
+        can_share_data = false;
+        return val;
+    }
+
+    template<typename K, typename V>
+    V const &stack<K, V>::front(const K &key) const {
+        if (!data->keys.contains(key)) {
+            throw std::invalid_argument("no element with the given key");
+        }
+
+        key_id_t key_id = data->keys[key];
+        return data->key_stacks[key_id].front()->second;
+    }
+
+    template<typename K, typename V>
     size_t stack<K, V>::size() const noexcept {
-        return data->main_list.size();
+        return data->stack.size();
     }
 
     template<typename K, typename V>
     size_t stack<K, V>::count(const K &key) const {
-        if (!data->keyMapping.contains(key))
+        if (!data->keys.contains(key))
             return 0;
-        key_id_t id = data->keyMapping[key];
-        return data->aux_lists[id].size();
+        key_id_t id = data->keys[key];
+        return data->key_stacks[id].size();
     }
 
     template<typename K, typename V>
@@ -167,186 +287,33 @@ namespace cxx {
     }
 
     template<typename K, typename V>
-    void stack<K, V>::push(const K &key, const V &value) {
-        shared_ptr<data_struct> copied_data = fork_data_if_needed();
-        key_id_t id;
-        typename std::map<K, key_id_t>::iterator keyMappingIter;
-        typename std::map<key_id_t, typename std::map<K, key_id_t>::iterator>::iterator keyMappingRevIter;
-        typename std::map<key_id_t, aux_stack_item_t>::iterator auxListIter;
-        bool delFromKeyMapping = false;
-        bool delFromKeyMappingRev = false;
-        bool delFromAuxList = false;
-        if (copied_data->keyMapping.contains(key)) id = copied_data->keyMapping[key];
-        else {
-            try {
-                id = copied_data->next_key_id;
-                keyMappingIter = copied_data->keyMapping.insert({key, id}).first;
-                delFromKeyMapping = true;
-                keyMappingRevIter = copied_data->keyMappingRev.insert({id, copied_data->keyMapping.find(key)}).first;
-                delFromKeyMappingRev = true;
-                auxListIter = copied_data->aux_lists.insert({id, aux_stack_item_t()}).first;
-                delFromAuxList = true;
-            }
-            catch (...) {
-                if (delFromKeyMapping) copied_data->keyMapping.erase(keyMappingIter);
-                if (delFromKeyMappingRev) copied_data->keyMappingRev.erase(keyMappingRevIter);
-                if (delFromAuxList) copied_data->aux_lists.erase(auxListIter);
-                throw;
-            }
+    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::modifiable_data() {
+        if (data.use_count() > 1)
+            return data->duplicate();
+        return data;
+    }
+
+    // Works for removing only the first element with a given key.
+    template<typename K, typename V>
+    void stack<K, V>::remove_element(shared_ptr<data_struct>& working_data, stack::stack_it_t stack_it, stack::key_it_t key_it) {
+        key_id_t key_id = key_it->second;
+        if (working_data->key_stacks[key_id].size() == 1) {
+            working_data->keys.erase(key_it); // safe?
+            working_data->key_stacks.erase(key_id); // safe?
+        } else {
+            working_data->key_stacks[key_id].pop_front();
         }
-        bool remFromMainList = false;
-        typename main_stack_t::iterator mainListIter;
-        try {
-            mainListIter = copied_data->main_list.insert(copied_data->main_list.end(), {id, value});
-            remFromMainList = true;
-            auto it = copied_data->main_list.end();
-            copied_data->aux_lists[id].push_back(--it);
-            if (delFromKeyMapping) ++copied_data->next_key_id;
-        } catch (...) {
-            if (remFromMainList) copied_data->main_list.erase(mainListIter);
-            copied_data->keyMapping.erase(keyMappingIter);
-            copied_data->keyMappingRev.erase(keyMappingRevIter);
-            copied_data->aux_lists.erase(auxListIter);
-            throw;
-        }
-
-        data = copied_data;
-        can_be_shallow_copied = true;
-    }
-
-    template<typename K, typename V>
-    void stack<K, V>::pop() {
-
-        if (data->main_list.size() == 0) throw std::invalid_argument("cannot pop from empty stack");
-
-        shared_ptr<data_struct> tmp = fork_data_if_needed();
-        key_id_t key = tmp->main_list.back().first;
-        const K& k = (*tmp->keyMappingRev[key]).first;
-
-        tmp->main_list.pop_back();
-        if (tmp->aux_lists[key].size() == 1) {
-            tmp->keyMapping.erase(k); // unsafe - might throw sth on comapring between K type
-            tmp->keyMappingRev.erase(key); // safe - compare on size_t is ok (?)
-            tmp->aux_lists.erase(key); // as above
-        }
-        else tmp->aux_lists.at(key).pop_back(); // should not throw anything
-        data = tmp;
-        can_be_shallow_copied = true;
-    }
-
-    template<typename K, typename V>
-    void stack<K, V>::pop(K const &key) {
-
-        size_t sz;
-        // TODO: może jakieś makra albo funkcje na dobieranie sie
-        //  do tych internal list?
-
-        if (!data->keyMapping.contains(key)) throw std::invalid_argument("no elem with given key");
-
-        key_id_t id = data->keyMapping[key];
-
-        shared_ptr<data_struct> tmp;
-        tmp = fork_data_if_needed();
-        auto iter = tmp->aux_lists.at(id).back();
-        if (tmp->aux_lists.at(id).size() == 1) {
-            tmp->keyMapping.erase(key);
-            tmp->aux_lists.erase(id);
-            tmp->keyMappingRev.erase(id);
-        }
-        else tmp->aux_lists.at(id).pop_back();
-        tmp->main_list.erase(iter);
-        data = tmp;
-        can_be_shallow_copied = true;
-    }
-
-    template<typename K, typename V>
-    std::pair<K const&, V&> stack<K, V>::front() {
-        can_be_shallow_copied = false; // todo: rollback on fail
-        data = fork_data_if_needed();
-
-        return _front();
-    }
-
-    template<typename K, typename V>
-    std::pair<K const&, V const&> stack<K, V>::front() const {
-        return _front();
-    }
-
-    template<typename K, typename V>
-    V& stack<K, V>::front(K const& key) {
-        can_be_shallow_copied = false; // todo: rollback on fail
-        fork_data_if_needed();
-
-        return _front(key);
-    }
-
-    template<typename K, typename V>
-    V const& stack<K, V>::front(K const& key) const {
-        return _front(key);
-    }
-
-    template<typename K, typename V>
-    const std::pair<K const&, V const&> stack<K, V>::_front() const {
-        key_id_t key_id = data->main_list.back().first;
-        V const& val = data->main_list.back().second;
-        K const& key = data->keyMappingRev[key_id]->first;
-        return {key, val};
-    }
-
-    template<typename K, typename V>
-    std::pair<K const&, V&> stack<K, V>::_front() {
-        key_id_t key_id = data->main_list.back().first;
-        V& val = data->main_list.back().second;
-        K const& key = data->keyMappingRev[key_id]->first;
-        return {key, val};
-    }
-
-    template<typename K, typename V>
-    V& stack<K, V>::_front(K const& key) {
-        if (!data->keyMapping.contains(key)) {
-            throw std::invalid_argument("no element with the given key");
-        }
-
-        key_id_t key_id = data->keyMapping[key];
-        return data->aux_lists[key_id].back()->second;
-    }
-
-
-    template<typename K, typename V>
-    const V& stack<K, V>::_front(K const& key) const {
-        if (!data->keyMapping.contains(key)) {
-            throw std::invalid_argument("no element with the given key");
-        }
-
-        key_id_t key_id = data->keyMapping[key];
-        return data->aux_lists[key_id].back()->second;
-    }
-
-    /**
-     * \brief Forks the data_struct if a reference to a
-     *  data item was returned to an outside object, or
-     *  if at least one other stack uses the same underlying
-     *  data object.
-     */
-    template<typename K, typename V>
-    shared_ptr<typename stack<K, V>::data_struct> stack<K, V>::fork_data_if_needed() {
-        shared_ptr<data_struct> data_cpy = data;
-
-        if (data.use_count() > 2) { // copy created above should be not counted in total count
-            data_cpy = data->duplicate();
-        }
-
-        return data_cpy;
+        working_data->stack.erase(stack_it);
     }
 
     template<typename K, typename V>
     typename stack<K, V>::const_iterator stack<K, V>::cbegin() {
-        return const_iterator(data->keyMapping.cbegin());
+        return const_iterator(data->keys.cbegin());
     }
 
     template<typename K, typename V>
     typename stack<K, V>::const_iterator stack<K, V>::cend() {
-        return const_iterator(data->keyMapping.cend());
+        return const_iterator(data->keys.cend());
     }
 
     template<typename K, typename V>
