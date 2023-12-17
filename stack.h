@@ -68,8 +68,8 @@ namespace cxx {
             // key id
             using key_id_t          = uint64_t;
             using main_stack_t      = std::list<std::pair<key_id_t, V>>;
-            using main_stack_cit_t  = typename main_stack_t::iterator;
-            using aux_stack_item_t  = std::list<main_stack_cit_t>;
+            using main_stack_it_t  = typename main_stack_t::iterator;
+            using aux_stack_item_t  = std::list<main_stack_it_t>;
             // setting this member to false indicates that some non-const 
             // references to stack data may exist so making shallow copy
             // would be unsafe
@@ -97,18 +97,24 @@ namespace cxx {
 
         data_struct(): next_key_id(1) {}
 
-        data_struct(main_stack_t &main_list, std::map<key_id_t, aux_stack_item_t> & aux_lists, std::map<K, key_id_t> &keyMapping, std::map<key_id_t, typename std::map<K, key_id_t>::iterator> &keyMappingRev, key_id_t next_key_id = 1) :
+        data_struct(main_stack_t &main_list, std::map<K, key_id_t> &keyMapping, key_id_t next_key_id = 1) :
             next_key_id(next_key_id),
-            aux_lists(aux_lists),
             main_list(main_list),
-            keyMapping(keyMapping),
-            keyMappingRev(keyMappingRev)
-        {}
+            keyMapping(keyMapping)
+        {
+            // reconstructing aux_lists and keyMappingRev
+            for (auto it = keyMapping.begin(); it != keyMapping.end(); it ++) {
+                keyMappingRev.insert({it->second, it});
+            }
 
-        // Automatically decrements the use_count!
+            for (auto it = main_list.begin(); it != main_list.end(); it ++) {
+                aux_lists[it->first].push_back(it);
+            }
+        }
+
         shared_ptr<data_struct> duplicate() {
 
-            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, aux_lists, keyMapping, keyMappingRev, next_key_id);
+            shared_ptr<data_struct> cpy = std::make_shared<data_struct>(main_list, keyMapping, next_key_id);
             return cpy;
         }
     };
